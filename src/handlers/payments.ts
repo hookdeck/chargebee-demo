@@ -16,6 +16,9 @@ export function handlePaymentsWebhook(req: Request, res: Response): void {
     // Payload structure: { id, event_type, content: { customer/subscription/... } }
     const { id, event_type, content } = req.body;
 
+    // TODO: Check if event has already been processed (idempotency)
+    // Use event.id to track processed events in your database
+
     console.log("=".repeat(50));
     console.log("💳 Payment Event Received");
     console.log("Event ID:", id);

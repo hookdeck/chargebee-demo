@@ -1,0 +1,545 @@
+# Reliable Subscription & Customer Automation with Chargebee Webhooks and the Hookdeck Event Gateway
+
+## Introduction
+
+Chargebee webhooks enable business automation around your subscription lifecycle. You can provision access when subscriptions are created, update user entitlements when plans change, extend access on successful renewals, sync customer data to internal systems, track revenue from payments, and trigger email notifications for lifecycle events.
+
+This tutorial shows you how to build reliable handlers for subscription, customer, and payment events. You create focused handlers for each event type and use event routing to separate concerns in your application.
+
+Webhook reliability challenges impact these workflows directly. Network failures result in missed provisioning. Duplicate events risk double-charging or double-provisioning. Debugging webhook issues delays time-sensitive operations. Without proper infrastructure, managing these workflows is error-prone.
+
+This tutorial uses the Hookdeck Event Gateway to address these problems. Hookdeck provides automatic retries, duplicate detection, event routing, and observability. You configure Chargebee to send all events to a single Hookdeck endpoint, which routes them to the appropriate handlers in your application.
+
+If you prefer to dive directly into the code, you can find the complete implementation in the [Chargebee Billing Hookdeck demo GitHub repository](https://github.com/hookdeck/chargebee-billing-demo).
+
+```
+Chargebee → Hookdeck Event Gateway → Application Endpoints
+                                    ├─ /webhooks/chargebee/customer
+                                    ├─ /webhooks/chargebee/subscription
+                                    └─ /webhooks/chargebee/payments
+```
+
+## Prerequisites
+
+- Chargebee account with API key ([start a trial](https://www.chargebee.com/trial-signup/))
+- Hookdeck account ([sign up](https://dashboard.hookdeck.com/signup))
+- Node.js v18 or later
+- Basic understanding of webhooks and HTTP
+
+### Clone the Repository
+
+Clone the demo repository to get started:
+
+```bash
+git clone https://github.com/hookdeck/chargebee-billing-demo.git
+cd chargebee-billing-demo
+npm install
+```
+
+### Configure Environment Variables
+
+Create a `.env` file in the project root:
+
+```bash
+# Hookdeck
+HOOKDECK_API_KEY=your_hookdeck_api_key
+
+# Chargebee
+CHARGEBEE_API_KEY=your_chargebee_api_key
+CHARGEBEE_SITE_NAME=your_site_name
+CHARGEBEE_WEBHOOK_USERNAME=your_webhook_username
+CHARGEBEE_WEBHOOK_PASSWORD=your_webhook_password
+```
+
+The tutorial walks through the code in this repository, explaining the architecture and implementation of each component.
+
+## Architecture Overview
+
+Chargebee sends all webhook events to a single Hookdeck Source URL. Hookdeck authenticates incoming requests using Basic Auth credentials that you configure in both systems.
+
+Three Hookdeck Connections route events to focused handlers based on the `event_type` field. The customer handler syncs profile changes to your internal CRM or database. The subscription handler provisions access, updates entitlements, and processes renewals. The payment handler tracks revenue, confirms renewals, and updates billing status.
+
+This architecture provides separation of concerns, easier testing, and independent scaling. Each handler focuses on a specific workflow. You can update customer sync logic without affecting subscription provisioning. You can scale payment processing independently from customer updates.
+
+## Step 1 — Programmatically Create Hookdeck Event Gateway Connections
+
+Create the Hookdeck infrastructure first because this step generates the webhook URL that Chargebee needs. The repository includes a setup script at `scripts/upsert-connections.ts` that creates both the Hookdeck Connections and the Chargebee webhook endpoint.
+
+Before running the script, understand what it does by examining the code.
+
+### Creating the Hookdeck Source
+
+The Source provides the webhook URL that Chargebee will send events to. It also configures authentication to secure your endpoint:
+
+```typescript
+const sourceResponse = await fetch(
+  "https://api.hookdeck.com/2025-07-01/sources",
+  {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${HOOKDECK_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name: "chargebee",
+      type: "CHARGEBEE_BILLING",
+      config: {
+        auth: {
+          username: process.env.CHARGEBEE_WEBHOOK_USERNAME,
+          password: process.env.CHARGEBEE_WEBHOOK_PASSWORD,
+        },
+      },
+    }),
+  },
+);
+
+const source = await sourceResponse.json();
+const hookdeckSourceUrl = source.url;
+const hookdeckSourceId = source.id;
+```
+
+This generates a unique URL that Chargebee will send webhooks to. The Basic Auth credentials secure the endpoint and must match what you configure in Chargebee. The PUT method makes this operation idempotent, so you can safely re-run it across environments. The script stores `hookdeckSourceUrl` in a variable for use in Step 2.
+
+### Creating Connections
+
+Each Connection defines a route from the Source to a specific Destination. Connections include filter rules that determine which events they handle:
+
+```typescript
+const customerConnection = {
+  name: "chargebee-customer",
+  source_id: source.id,
+  destination: {
+    name: "customer-handler",
+    type: "CLI",
+    config: { path: "/webhooks/chargebee/customer" },
+  },
+  rules: [
+    {
+      type: "filter",
+      body: {
+        event_type: { $startsWith: "customer_" },
+      },
+    },
+  ],
+};
+
+await fetch("https://api.hookdeck.com/2025-07-01/connections", {
+  method: "PUT",
+  headers: {
+    Authorization: `Bearer ${HOOKDECK_API_KEY}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify(customerConnection),
+});
+```
+
+The filter rule routes all events where `event_type` starts with `customer_` to this Connection's Destination. The `type: "CLI"` configuration is for local development with the Hookdeck CLI. For production deployments, use `type: "HTTP"` with a full URL in the config.
+
+The subscription and payment Connections follow the same pattern with different filters and paths. The complete setup creates this routing table:
+
+| Connection   | Filter                                   | Destination                        |
+| ------------ | ---------------------------------------- | ---------------------------------- |
+| Customer     | `event_type` starts with `customer_`     | `/webhooks/chargebee/customer`     |
+| Subscription | `event_type` starts with `subscription_` | `/webhooks/chargebee/subscription` |
+| Payment      | `event_type` equals `payment_succeeded`  | `/webhooks/chargebee/payments`     |
+
+## Step 2 — Programmatically Create the Chargebee Webhook Endpoint
+
+Configure Chargebee to send events to the Hookdeck Source URL from Step 1. The same setup script (`scripts/upsert-connections.ts`) also creates the Chargebee webhook endpoint.
+
+### Why Programmatic Setup
+
+Manual webhook configuration leads to drift between development, staging, and production environments. Credentials can mismatch, event subscriptions can diverge, and debugging becomes difficult. Infrastructure as code solves these problems by making setup idempotent and version-controlled.
+
+### Creating the Webhook Endpoint
+
+```typescript
+async function createChargebeeWebhookEndpoint(
+  apiKey: string,
+  siteName: string,
+  webhookUrl: string,
+  username: string,
+  password: string,
+): Promise<void> {
+  const auth = Buffer.from(`${apiKey}:`).toString("base64");
+
+  // List of webhook events to subscribe to
+  const eventTypes = [
+    "customer_created",
+    "customer_changed",
+    "subscription_created",
+    "subscription_renewed",
+    "subscription_changed",
+    "payment_succeeded",
+  ];
+
+  const params = new URLSearchParams({
+    name: "Hookdeck Webhook Endpoint",
+    url: webhookUrl,
+    api_version: "v2",
+  });
+
+  eventTypes.forEach((event) => params.append("webhook_events[]", event));
+  params.append("webhook_authentication[type]", "basic_auth");
+  params.append("webhook_authentication[username]", username);
+  params.append("webhook_authentication[password]", password);
+
+  const response = await fetch(
+    `https://${siteName}.chargebee.com/api/v2/webhook_endpoints`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params,
+    },
+  );
+
+  if (!response.ok) {
+    const data = await response.json();
+    throw new Error(`HTTP ${response.status}: ${JSON.stringify(data)}`);
+  }
+}
+```
+
+The `url` parameter uses the Hookdeck Source URL from Step 1. The Basic Auth credentials must match those configured in the Hookdeck Source, or requests will fail authentication.
+
+This example shows six essential event types. The actual implementation uses `ALL_WEBHOOK_EVENTS` from `scripts/shared.ts`, which includes all 24 Chargebee webhook events for production use. The full script also checks for existing endpoints and updates them instead of creating duplicates.
+
+**Note:** The tutorial shows a simplified version with 6 events for clarity. The actual code uses the complete `ALL_WEBHOOK_EVENTS` list.
+
+### Running the Setup Script
+
+Now that you understand how the infrastructure is created, run the setup script:
+
+```bash
+npm run connections:upsert:dev
+```
+
+This script executes the code shown above, creating:
+
+1. Hookdeck Source → receives webhook URL
+2. Three Hookdeck Connections for event routing
+3. Chargebee webhook endpoint configured with the Hookdeck Source URL
+
+The script outputs the Hookdeck Source URL that Chargebee will send events to. You can view your Connections in the [Hookdeck dashboard](https://dashboard.hookdeck.com) and check your Chargebee webhook settings to confirm the endpoint was created successfully.
+
+Events now flow: Chargebee sends → Hookdeck authenticates and routes → Your handlers process.
+
+## Step 3 — Implement Minimal Handlers for Each Workflow
+
+With Connections routing events to the appropriate endpoints, you now implement handlers to process those events. Each handler focuses on a specific domain—customer synchronization, subscription provisioning, or payment tracking. This separation keeps your code maintainable and testable.
+
+Each handler extracts event data from the webhook payload, processes it based on the event type, and returns a 200 OK response. Hookdeck uses this response to confirm successful delivery.
+
+### Express Application Setup
+
+The Express application in `src/index.ts` provides a minimal foundation for the three webhook handlers. Authentication middleware protects all webhook routes, and each handler is mounted at the path specified in the Connection configuration.
+
+This is the complete `src/index.ts` file:
+
+```typescript
+import express from "express";
+import { handleCustomerWebhook } from "./handlers/customer";
+import { handleSubscriptionWebhook } from "./handlers/subscription";
+import { handlePaymentsWebhook } from "./handlers/payments";
+import { verifyHookdeckSignature } from "./middleware/hookdeck-auth";
+import { verifyChargebeeAuth } from "./middleware/chargebee-auth";
+
+const app = express();
+
+app.use(express.json());
+
+// Apply authentication to all webhook routes
+app.use("/webhooks", verifyHookdeckSignature, verifyChargebeeAuth);
+
+app.post("/webhooks/chargebee/customer", handleCustomerWebhook);
+app.post("/webhooks/chargebee/subscription", handleSubscriptionWebhook);
+app.post("/webhooks/chargebee/payments", handlePaymentsWebhook);
+
+app.listen(4000);
+```
+
+The authentication middleware verifies both Hookdeck's signature and Chargebee's Basic Auth credentials. This ensures that requests come from Hookdeck and originated from Chargebee. The three route handlers map directly to the Destination paths configured in the Connections from Step 1.
+
+**Note:** The following handler examples are simplified for clarity. The actual implementations in `src/handlers/` include detailed logging with timestamps and formatted console output. You'll also notice TODO comments indicating where idempotency checks should be added—see the Idempotency section below for implementation details.
+
+### Customer Handler
+
+The customer handler processes profile creation and updates in `src/handlers/customer.ts`. When customers are created or modified in Chargebee, this handler receives the event and can sync that data to your internal CRM or database.
+
+```typescript
+export function handleCustomerWebhook(req: Request, res: Response): void {
+  try {
+    const { id, event_type, content } = req.body;
+    const customer = content?.customer;
+
+    if (!customer) {
+      res.status(200).json({ received: true });
+      return;
+    }
+
+    // TODO: Check if event has already been processed (idempotency)
+
+    switch (event_type) {
+      case "customer_created":
+        console.log(`New customer: ${customer.id}`);
+        console.log(`Email: ${customer.email}`);
+        // Sync customer to internal CRM/database
+        break;
+
+      case "customer_changed":
+        console.log(`Customer updated: ${customer.id}`);
+        // Update customer record in internal systems
+        break;
+    }
+
+    // TODO: Mark event as processed (idempotency)
+
+    res.status(200).json({
+      received: true,
+      event_id: id,
+      customer_id: customer.id,
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+```
+
+The handler extracts event data from the webhook payload, switches on the event type, and logs the relevant information. In production, you replace the console logs with database operations or API calls to your internal systems. The 200 response confirms successful processing to Hookdeck.
+
+### Subscription Handler
+
+The subscription handler manages the subscription lifecycle in `src/handlers/subscription.ts`. It provisions access when subscriptions are created, updates entitlements when plans change, and extends access on successful renewals.
+
+```typescript
+export function handleSubscriptionWebhook(req: Request, res: Response): void {
+  try {
+    const { id, event_type, content } = req.body;
+    const subscription = content?.subscription;
+
+    if (!subscription) {
+      res.status(200).json({ received: true });
+      return;
+    }
+
+    // TODO: Check if event has already been processed (idempotency)
+
+    switch (event_type) {
+      case "subscription_created":
+        console.log(`New subscription: ${subscription.id}`);
+        console.log(`Customer: ${subscription.customer_id}`);
+        console.log(`Plan: ${subscription.plan_id}`);
+        // Provision access/entitlements
+        break;
+
+      case "subscription_renewed":
+        console.log(`Subscription renewed: ${subscription.id}`);
+        // Extend access period
+        break;
+
+      case "subscription_changed":
+        console.log(`Subscription changed: ${subscription.id}`);
+        console.log(`New plan: ${subscription.plan_id}`);
+        // Update entitlements based on plan changes
+        break;
+    }
+
+    // TODO: Mark event as processed (idempotency)
+
+    res.status(200).json({
+      received: true,
+      event_id: id,
+      subscription_id: subscription.id,
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+```
+
+Each event type maps to a specific business operation. Subscription creation triggers access provisioning. Renewals extend existing access. Changes update entitlements based on the new plan. This separation makes each operation clear and testable.
+
+### Payment Handler
+
+The payment handler tracks successful payments in `src/handlers/payments.ts`. This enables revenue tracking, renewal confirmation, and billing status updates without mixing payment logic into the subscription handler.
+
+```typescript
+export function handlePaymentsWebhook(req: Request, res: Response): void {
+  try {
+    const { id, event_type, content } = req.body;
+    const transaction = content?.transaction;
+
+    if (!transaction) {
+      res.status(200).json({ received: true });
+      return;
+    }
+
+    // TODO: Check if event has already been processed (idempotency)
+
+    if (event_type === "payment_succeeded") {
+      console.log(`Payment succeeded: ${transaction.id}`);
+      console.log(`Customer: ${transaction.customer_id}`);
+      console.log(
+        `Amount: ${transaction.amount / 100} ${transaction.currency_code}`,
+      );
+      // Update revenue metrics
+      // Clear "pending renewal" flags
+      // Send payment confirmation email
+    }
+
+    // TODO: Mark event as processed (idempotency)
+
+    res.status(200).json({
+      received: true,
+      event_id: id,
+      transaction_id: transaction.id,
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+```
+
+Separating payment events into their own handler makes it easy to add payment-specific logic like analytics or confirmation emails. This handler remains focused on payment processing without affecting customer or subscription workflows.
+
+### Idempotency
+
+You are responsible for implementing idempotency in your handlers. Use the event `id` field to track which events you've already processed. Store processed event IDs in your database and check against this list before performing operations.
+
+While Hookdeck's Event Gateway reduces duplicate delivery through its retry mechanisms, it doesn't eliminate the need for handler-level deduplication. Network issues or application restarts can cause the same event to be delivered multiple times. Implement idempotency checks to ensure operations like provisioning access or charging customers happen exactly once per event.
+
+Here's an example implementation that could replace the TODO comments in the handlers:
+
+```typescript
+// Check if event has already been processed
+async function checkEventProcessed(eventId: string): Promise<boolean> {
+  // Query your database for this event ID
+  const exists = await db.processedEvents.findOne({ eventId });
+  return exists !== null;
+}
+
+// Mark event as processed after successful handling
+async function markEventAsProcessed(eventId: string): Promise<void> {
+  // Store the event ID with timestamp
+  await db.processedEvents.create({
+    eventId,
+    processedAt: new Date(),
+  });
+}
+
+// Use in your handler
+export function handleCustomerWebhook(req: Request, res: Response): void {
+  try {
+    const { id, event_type, content } = req.body;
+
+    // Check idempotency before processing
+    const isProcessed = await checkEventProcessed(id);
+    if (isProcessed) {
+      res.status(200).json({ received: true, event_id: id });
+      return;
+    }
+
+    // Process the event...
+    switch (event_type) {
+      case "customer_created":
+        // Handle customer creation
+        break;
+    }
+
+    // Mark as processed after successful handling
+    await markEventAsProcessed(id);
+
+    res.status(200).json({ received: true, event_id: id });
+  } catch (error) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+```
+
+The pattern is straightforward: check before processing, handle the event, then mark as processed. This ensures that even if Chargebee or Hookdeck delivers the same event multiple times, your business logic executes only once.
+
+## Step 4 — Testing the Flow End-to-End
+
+With the infrastructure created and the handler code explained, you now run the application to verify the complete flow from Chargebee through Hookdeck to your handlers.
+
+### Start the Application
+
+Start the Express server:
+
+```bash
+npm run dev
+```
+
+In a separate terminal, start the Hookdeck CLI to forward events to your local server:
+
+```bash
+hookdeck listen 4000 chargebee
+```
+
+You'll see output similar to this which shows you the events are being routed via Connections from the Hookdeck Source to each of your local handlers:
+
+```sh
+●── HOOKDECK CLI ──●
+
+Listening on 1 source • 3 connections • [i] Collapse
+
+chargebee
+│  Requests to → https://hkdk.events/77lhnnpej9ti65
+├─ Forwards to → http://localhost:4000/webhooks/chargebee/payments (chargebee-payment)
+├─ Forwards to → http://localhost:4000/webhooks/chargebee/subscription (chargebee-subscription)
+└─ Forwards to → http://localhost:4000/webhooks/chargebee/customer (chargebee-customer)
+
+💡 View dashboard to inspect, retry & bookmark events: https://dashboard.hookdeck.com/events/cli?team_id=X
+```
+
+The CLI creates a secure tunnel between Hookdeck and your development environment without exposing your machine to the internet. Events now flow: Chargebee → Hookdeck → CLI → `localhost:4000`.
+
+### Triggering Test Events
+
+The simplest test is to use the **Test Webhook** feature in Chargebee's webhook settings. This sends a sample payload to your Hookdeck endpoint, allowing you to verify that the event is received and routed correctly.
+
+To test real workflows, create test customers and subscriptions in Chargebee's test mode. Chargebee automatically sends webhook events to the Event Gateway endpoint you configured in Step 2.
+
+Log into your Chargebee test site, create a customer with an email and billing information, then create a subscription for that customer with a test plan. Chargebee generates `customer_created` and `subscription_created` events and sends them to the Event Gateway.
+
+### Verifying Event Delivery
+
+Check multiple points in the flow to confirm events are processed correctly:
+
+- **Hookdeck Dashboard**: View incoming events in real-time, inspect payloads, and see which Connection handled each event
+- **Connection Routing**: Verify that customer events route to the customer handler, subscription events to the subscription handler
+- **Application Logs**: Check your terminal for handler output showing event processing
+- **Response Status**: Confirm that handlers return 200 OK and Hookdeck marks deliveries as successful
+
+![Hookdeck Event Gateway dashboard showing a customer_created event from Chargebee with successful delivery status](images/hookdeck-dashboard-event-list.png)
+
+_Caption: Event delivery in the Hookdeck Event Gateway dashboard_
+
+The dashboard shows event details including the full payload, headers, and delivery attempts. Click into an event to see the JSON structure and verify that your handler received the correct data.
+
+![Hookdeck event details view displaying the JSON payload of a subscription_created event and successful delivery attempt with 200 OK response](images/hookdeck-event-details.png)
+
+_Caption: Event details showing successful delivery and handler response_
+
+### What Success Looks Like
+
+A successful test produces these results:
+
+- Event appears in the Event Gateway dashboard within seconds of creation in Chargebee
+- Correct Connection routes the event based on the filter rules you configured
+- Hookdeck CLI logs the event in your terminal before forwarding it to your local endpoint
+- Handler processes the event and logs relevant information to your terminal
+- Event Gateway marks the delivery as successful with a 200 OK response
+- No errors appear in application logs or the Event Gateway dashboard
+
+### Troubleshooting
+
+Common issues and solutions:
+
+- **Event not reaching Hookdeck**: Verify the webhook endpoint URL in Chargebee matches the Hookdeck Source URL. Check that Basic Auth credentials match between Chargebee and Hookdeck.
+- **Event not routed**: Check Connection filter rules in the Hookdeck dashboard. Verify that the event type matches your filter patterns (`customer_`, `subscription_`, `payment_succeeded`).
+- **Handler errors**: Check application logs for error messages. Verify that the handler is correctly extracting data from the payload structure.
+- **Authentication issues**: Confirm that the Basic Auth credentials in your `.env` file match what you configured in Hookdeck and Chargebee. Check that Hookdeck signature verification middleware is configured correctly.

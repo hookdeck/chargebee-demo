@@ -99,27 +99,33 @@ async function updateChargebeeWebhookEndpoint(
   console.log("   Updating Chargebee webhook endpoint...");
 
   const auth = Buffer.from(`${apiKey}:`).toString("base64");
-
   const eventTypes = [...ALL_WEBHOOK_EVENTS];
 
-  await makeHttpRequest(
+  const params = new URLSearchParams({
+    url: webhookUrl,
+    api_version: "v2",
+    basic_auth_username: username,
+    basic_auth_password: password,
+  });
+
+  eventTypes.forEach((event) => params.append("webhook_events[]", event));
+
+  const response = await fetch(
     `https://${siteName}.chargebee.com/api/v2/webhook_endpoints/${endpointId}`,
-    "POST",
     {
-      Authorization: `Basic ${auth}`,
-    },
-    {
-      url: webhookUrl,
-      webhook_events: eventTypes,
-      api_version: "v2",
-      webhook_authentication: {
-        type: "basic_auth",
-        username,
-        password,
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
       },
+      body: params,
     },
-    "form", // Chargebee API expects form-urlencoded data
   );
+
+  if (!response.ok) {
+    const data = await response.json();
+    throw new Error(`HTTP ${response.status}: ${JSON.stringify(data)}`);
+  }
 }
 
 async function createChargebeeWebhookEndpoint(
@@ -135,25 +141,32 @@ async function createChargebeeWebhookEndpoint(
 
   const eventTypes = [...ALL_WEBHOOK_EVENTS];
 
-  await makeHttpRequest(
+  const params = new URLSearchParams({
+    name: "Hookdeck Webhook Endpoint",
+    url: webhookUrl,
+    api_version: "v2",
+    basic_auth_username: username,
+    basic_auth_password: password,
+  });
+
+  eventTypes.forEach((event) => params.append("webhook_events[]", event));
+
+  const response = await fetch(
     `https://${siteName}.chargebee.com/api/v2/webhook_endpoints`,
-    "POST",
     {
-      Authorization: `Basic ${auth}`,
-    },
-    {
-      name: "Hookdeck Webhook Endpoint",
-      url: webhookUrl,
-      webhook_events: eventTypes,
-      api_version: "v2",
-      webhook_authentication: {
-        type: "basic_auth",
-        username,
-        password,
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
       },
+      body: params,
     },
-    "form", // Chargebee API expects form-urlencoded data
   );
+
+  if (!response.ok) {
+    const data = await response.json();
+    throw new Error(`HTTP ${response.status}: ${JSON.stringify(data)}`);
+  }
 }
 
 // Main script logic
@@ -220,7 +233,7 @@ async function setupHookdeckConnections(mode: Mode): Promise<string> {
           type: "filter",
           body: {
             event_type: {
-              $starts_with: "customer_",
+              $startsWith: "customer_",
             },
           },
         },
@@ -238,7 +251,7 @@ async function setupHookdeckConnections(mode: Mode): Promise<string> {
           type: "filter",
           body: {
             event_type: {
-              $starts_with: "subscription_",
+              $startsWith: "subscription_",
             },
           },
         },

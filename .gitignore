@@ -50,3 +50,6 @@ coverage/
 *.pid
 *.seed
 *.pid.lock
+
+# Hookdeck
+.hookdeck/
