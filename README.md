@@ -1,22 +1,46 @@
 # Chargebee Hookdeck Demo
 
-A TypeScript Express.js application demonstrating how to receive Chargebee webhooks via Hookdeck Event Gateway with proper authentication and separation of concerns.
+A production-ready TypeScript Express.js application for reliable Chargebee webhook integration using the Hookdeck Event Gateway. This demo provides programmatic setup, filtered event routing, and focused handlers for subscription lifecycle automation.
 
 ## Overview
 
-This project provides a webhook receiver that integrates Chargebee subscription events with Hookdeck for reliable webhook delivery, monitoring, and debugging. The application features:
+This project demonstrates how to build reliable webhook handlers for Chargebee subscription, customer, and payment events. Chargebee webhooks enable business automation around your subscription lifecycle—provision access when subscriptions are created, update user entitlements when plans change, extend access on successful renewals, sync customer data to internal systems, track revenue from payments, and trigger notifications for lifecycle events.
 
-- **Separate handlers** for customer, subscription, and payment events
-- **Dual authentication** with Hookdeck signature verification and Chargebee Basic Auth
-- **Clean architecture** with modular, focused components
-- **TypeScript** for type safety and better developer experience
+The application uses Hookdeck Event Gateway to solve common webhook reliability challenges: automatic retries for network failures, duplicate detection to prevent double-processing, filtered event routing to separate concerns, and comprehensive observability for debugging.
+
+**Key Features:**
+
+- **Filtered Event Routing** - Chargebee sends all events to a single Hookdeck endpoint, which routes them to focused handlers based on `event_type`
+- **Business Use Cases** - Subscription provisioning, payment tracking, and customer synchronization
+- **Programmatic Setup** - Automated scripts create Hookdeck Connections and Chargebee webhook endpoints
+- **Dual Authentication** - Hookdeck signature verification and Chargebee Basic Auth
+- **Modular Architecture** - Separate handlers for customer, subscription, and payment workflows
+- **TypeScript** - Type safety and better developer experience
+
+## How It Works
+
+```
+Chargebee → Hookdeck Event Gateway → Application Endpoints
+                                    ├─ /webhooks/chargebee/customer
+                                    ├─ /webhooks/chargebee/subscription
+                                    └─ /webhooks/chargebee/payments
+```
+
+Chargebee sends all webhook events to a single Hookdeck Source URL. Hookdeck authenticates incoming requests using Basic Auth credentials configured in both systems. Three Hookdeck Connections route events to focused handlers based on the `event_type` field:
+
+- **Customer handler** syncs profile changes to your CRM or database
+- **Subscription handler** provisions access, updates entitlements, and processes renewals
+- **Payment handler** tracks revenue, confirms renewals, and updates billing status
+
+This architecture provides separation of concerns, easier testing, and independent scaling. Each handler focuses on a specific workflow without affecting others.
 
 ## Prerequisites
 
 - Node.js 18 or higher
 - npm or yarn
-- A Chargebee account
-- A Hookdeck account
+- A [Chargebee account](https://www.chargebee.com/trial-signup/) (with API key)
+- A [Hookdeck account](https://dashboard.hookdeck.com/signup) (free tier available)
+- Hookdeck CLI installed and authenticated (for local development)
 
 ## Installation
 
@@ -66,11 +90,26 @@ PROD_DESTINATION_URL=https://your-production-domain.com
 
 For local development with Hookdeck CLI:
 
+1. **Install and authenticate the Hookdeck CLI** (if not already done):
+
+```bash
+npm install -g hookdeck-cli
+hookdeck login
+```
+
+2. **Create the webhook connections**:
+
 ```bash
 npm run connections:upsert:dev
 ```
 
 This configures Hookdeck to forward webhooks to your local development server via the CLI.
+
+3. **Start the Hookdeck CLI** to forward events to your local server:
+
+```bash
+hookdeck listen 4000 chargebee
+```
 
 ### Production Mode Setup
 
@@ -84,13 +123,15 @@ This configures Hookdeck to forward webhooks to your production server URL (spec
 
 ## Development
 
-After setting up the webhook connections, run the application in development mode with hot reload:
+After setting up the webhook connections and starting the Hookdeck CLI, run the application in development mode with hot reload:
 
 ```bash
 npm run dev
 ```
 
 The server will start on `http://localhost:4000` (or the PORT specified in your `.env` file).
+
+You should now have both the Hookdeck CLI and your application running. The Hookdeck CLI will forward webhook events from Hookdeck to your local server.
 
 ## Building for Production
 
@@ -122,11 +163,9 @@ chargebee-demo/
 │   └── types/
 │       └── express.d.ts             # TypeScript type extensions
 ├── scripts/
-│   ├── cli-connection.sh            # Hookdeck CLI connection script
 │   ├── upsert-connections.ts        # Automated connection setup script
 │   ├── clean.ts                     # Cleanup script for Hookdeck resources
-│   ├── shared.ts                    # Shared types and utilities
-│   └── test-chargebee-auth.sh       # Test Chargebee API authentication
+│   └── shared.ts                    # Shared types and utilities
 ├── dist/                            # Compiled JavaScript output
 ├── .env.example                     # Environment variables template
 ├── package.json
@@ -135,13 +174,24 @@ chargebee-demo/
 └── README.md
 ```
 
-## Setting Up Webhook Connections
+## Webhook Connection Setup
 
-This project provides automated scripts to set up Hookdeck connections and Chargebee webhook configurations.
+The project includes automated scripts that programmatically create Hookdeck Connections and configure Chargebee webhook endpoints. This approach ensures consistency across environments and eliminates manual configuration drift.
 
-### Automated Setup (Recommended)
+### Understanding the Setup Process
 
-The project includes TypeScript scripts that idempotently create and configure connections:
+The setup script performs these operations:
+
+1. **Creates a Hookdeck Source** - Generates a webhook URL that Chargebee will send events to, with Basic Auth configured
+2. **Creates three Hookdeck Connections** - Each Connection routes specific event types to focused handlers:
+   - **Customer Connection**: Routes events where `body.event_type` starts with `customer_` to `/webhooks/chargebee/customer`
+   - **Subscription Connection**: Routes events where `body.event_type` starts with `subscription_` to `/webhooks/chargebee/subscription`
+   - **Payment Connection**: Routes events where `body.event_type` equals `payment_succeeded` to `/webhooks/chargebee/payments`
+3. **Creates Chargebee webhook endpoint** - Configures Chargebee to send events to the Hookdeck Source URL with Basic Auth credentials
+
+The scripts are idempotent—running them multiple times will update existing resources rather than creating duplicates.
+
+### Automated Setup
 
 #### Development Mode Setup
 
@@ -151,16 +201,11 @@ For local development with Hookdeck CLI:
 npm run connections:upsert:dev
 ```
 
-This will:
+This creates CLI-type Destinations for local webhook delivery via the Hookdeck CLI. After running this command, start the Hookdeck CLI to forward events to your local server:
 
-- Create a Hookdeck Source for Chargebee webhooks with Basic Auth
-- Create CLI-type Destinations for local webhook delivery
-- Create three Connections with event filters:
-  - **Customer events**: Routes events where `body.event_type` equals `customer_created` or `customer_changed`
-  - **Subscription events**: Routes events where `body.event_type` equals `subscription_created`, `subscription_renewed`, or `subscription_changed`
-  - **Payment events**: Routes events where `body.event_type` equals `payment_succeeded`
-- Create or update the Chargebee webhook endpoint with the Hookdeck Source URL
-- Configure Basic Authentication for the Chargebee webhook
+```bash
+hookdeck listen 4000 chargebee
+```
 
 #### Production Mode Setup
 
@@ -170,15 +215,7 @@ For production deployment with HTTP destinations:
 npm run connections:upsert:prod
 ```
 
-This will:
-
-- Create a Hookdeck Source for Chargebee webhooks with Basic Auth
-- Create HTTP-type Destinations using your `PROD_DESTINATION_URL`
-- Create three Connections with the same event filters as dev mode
-- Create or update the Chargebee webhook endpoint with the Hookdeck Source URL
-- Configure Basic Authentication for the Chargebee webhook
-
-**Note:** The scripts are idempotent - running them multiple times will update existing Hookdeck connections and Chargebee webhook endpoints rather than creating duplicates.
+This creates HTTP-type Destinations using your `PROD_DESTINATION_URL`. Ensure you've set `PROD_DESTINATION_URL` in your `.env` file to your production server's base URL.
 
 ### Manual Setup
 
@@ -225,39 +262,44 @@ Both authentication methods are applied globally to all `/webhooks/*` routes.
 - `npm run lint` - Run ESLint
 - `npm run format` - Format code with Prettier
 
-### Setup Scripts
+### Setup & Utility Scripts
 
 - `npm run connections:upsert:dev` - Set up Hookdeck and Chargebee connections for development (CLI destinations)
 - `npm run connections:upsert:prod` - Set up Hookdeck and Chargebee connections for production (HTTP destinations)
 - `npm run connections:clean` - Remove all Hookdeck connections and sources (useful for reset)
-- `npm run test:chargebee-auth` - Test Chargebee API authentication
 
-## Webhook Endpoints
+## Webhook Endpoints & Event Types
 
-The application provides three focused webhook endpoints:
+The application provides three focused webhook endpoints, each handling specific Chargebee event types:
 
 ### `/webhooks/chargebee/customer`
 
-Handles customer-related events:
+Handles customer-related events for syncing profile data to your CRM or database:
 
 - `customer_created` - New customer registration
 - `customer_changed` - Customer profile updates
 
+**Business Use Case:** When a customer is created or updated in Chargebee, sync their data to your internal systems to maintain a single source of truth.
+
 ### `/webhooks/chargebee/subscription`
 
-Handles subscription lifecycle events:
+Handles subscription lifecycle events for provisioning and managing access:
 
 - `subscription_created` - New subscription provisioning
 - `subscription_renewed` - Subscription renewal
 - `subscription_changed` - Plan changes and updates
 
+**Business Use Case:** Provision access when subscriptions are created, extend access on renewals, and update entitlements when plans change.
+
 ### `/webhooks/chargebee/payments`
 
-Handles payment events:
+Handles payment events for revenue tracking and billing operations:
 
 - `payment_succeeded` - Successful payment processing
 
-Each endpoint logs relevant event details and includes TODO comments for implementing business logic.
+**Business Use Case:** Track revenue, confirm renewals, update billing status, and send payment confirmation emails.
+
+Each handler extracts event data from the webhook payload, processes it based on the event type, and returns a 200 OK response to confirm successful delivery to Hookdeck. The handlers include TODO comments indicating where to implement idempotency checks and your specific business logic.
 
 ## Health Check
 
@@ -266,6 +308,39 @@ The application includes a health check endpoint at `/health` (no authentication
 ```bash
 curl http://localhost:4000/health
 ```
+
+## Deployment
+
+For production deployment:
+
+1. **Set up production environment variables** - Copy `.env.example` to `.env` and configure with production values
+2. **Set `PROD_DESTINATION_URL`** - Your production server's base URL (e.g., `https://your-app.com`)
+3. **Run production setup** - Execute `npm run connections:upsert:prod` to create HTTP-based Hookdeck Connections
+4. **Build the application** - Run `npm run build` to compile TypeScript
+5. **Deploy** - Deploy the `dist/` directory and `.env` file to your hosting platform
+6. **Start the server** - Run `npm start` on your production server
+
+Hookdeck will forward webhook events from Chargebee to your production endpoints at the configured `PROD_DESTINATION_URL`.
+
+## Idempotency
+
+Implement idempotency checks in your handlers to ensure operations like provisioning access or charging customers happen exactly once per event. Use the event `id` field to track processed events:
+
+```typescript
+// Check if event has already been processed
+const isProcessed = await checkEventProcessed(id);
+if (isProcessed) {
+  res.status(200).json({ received: true, event_id: id });
+  return;
+}
+
+// Process the event...
+
+// Mark as processed after successful handling
+await markEventAsProcessed(id);
+```
+
+While Hookdeck reduces duplicate delivery through its retry mechanisms, network issues or application restarts can cause the same event to be delivered multiple times. Handler-level deduplication ensures your business logic executes only once.
 
 ## License
 
