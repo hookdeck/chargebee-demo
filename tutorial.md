@@ -535,6 +535,16 @@ A successful test produces these results:
 - Event Gateway marks the delivery as successful with a 200 OK response
 - No errors appear in application logs or the Event Gateway dashboard
 
+### Inspecting and Retrying Events with the CLI
+
+When developing locally, the Hookdeck CLI provides an interactive terminal interface for real-time event inspection and retry capabilities. This streamlines your development workflow by letting you debug webhook handlers quickly without repeatedly triggering new events from Chargebee.
+
+The CLI displays events in an interactive list as they flow from Chargebee through the Event Gateway to your local handlers. Navigate through events using keyboard shortcuts, press `d` to inspect full payloads and response details, and use `r` to retry events directly to your current handler code. This creates a fast debugging cycle: inspect an event, update your handler code, retry the event, and verify the fix—all without leaving your terminal.
+
+Testing with real Chargebee event data means your handlers encounter the exact field structure, edge cases, and data variations they'll handle in production. The convenience of retrying events directly from your terminal keeps you in your development environment, avoiding context switches to the Chargebee dashboard.
+
+For full command documentation, keyboard shortcuts, and advanced CLI features, see the [Hookdeck CLI documentation](https://hookdeck.com/docs/cli).
+
 ### Troubleshooting
 
 Common issues and solutions:
@@ -544,15 +554,79 @@ Common issues and solutions:
 - **Handler errors**: Check application logs for error messages. Verify that the handler is correctly extracting data from the payload structure.
 - **Authentication issues**: Confirm that the Basic Auth credentials in your `.env` file match what you configured in Hookdeck and Chargebee. Check that Hookdeck signature verification middleware is configured correctly.
 
-## Using the Hookdeck CLI During Development
+## Step 5 — Deploy to Production
 
-When developing locally, the Hookdeck CLI provides an interactive terminal interface for real-time event inspection and retry capabilities. This streamlines your development workflow by letting you debug webhook handlers quickly without repeatedly triggering new events from Chargebee.
+After testing your integration locally and confirming that events flow correctly through the Event Gateway to your handlers, you're ready to deploy to production. The same setup script that created your development infrastructure works for production environments with different environment variables. This ensures your production environment matches your tested development configuration.
 
-The CLI displays events in an interactive list as they flow from Chargebee through the Event Gateway to your local handlers. Navigate through events using keyboard shortcuts, press `d` to inspect full payloads and response details, and use `r` to retry events directly to your current handler code. This creates a fast debugging cycle: inspect an event, update your handler code, retry the event, and verify the fix—all without leaving your terminal.
+### Running the Production Setup
 
-Testing with real Chargebee event data means your handlers encounter the exact field structure, edge cases, and data variations they'll handle in production. The convenience of retrying events directly from your terminal keeps you in your development environment, avoiding context switches to the Chargebee dashboard.
+Execute the setup script in production mode to create or update your production infrastructure:
 
-For full command documentation, keyboard shortcuts, and advanced CLI features, see the [Hookdeck CLI documentation](https://hookdeck.com/docs/cli).
+```bash
+npm run upsert-connections prod
+```
+
+This command performs the following operations:
+
+- Creates or updates Hookdeck Connections with HTTP destinations (not CLI) pointing to your production servers
+- Uses the `PROD_DESTINATION_URL` environment variable for destination URLs
+- Creates or updates the Chargebee webhook endpoint to point to your production Hookdeck Source
+
+### Initial Production Deployment
+
+For your first deployment to production, you can use the same [Hookdeck project](https://hookdeck.com/docs/projects) and Chargebee site that you used for development:
+
+1. Update your environment variables:
+   - Set `PROD_DESTINATION_URL` to your production server URL
+   - Keep `CHARGEBEE_API_KEY`, `CHARGEBEE_SITE`, and `HOOKDECK_API_KEY` unchanged
+
+2. Run the setup script to update your Connections to point to production handlers
+
+This approach gets your integration into production quickly without managing multiple environments.
+
+### Setting Up Separate Test and Production Environments
+
+After your initial production deployment, create separate test and production environments for safer development workflows. This is the **recommended approach for ongoing development** and prevents test events from mixing with production data.
+
+**Separate Hookdeck Projects:**
+
+Create dedicated Hookdeck projects for each environment. You can have as many projects as you need—common setups include development, staging, and production:
+
+1. Create a new [Hookdeck project](https://hookdeck.com/docs/projects) for each environment in the [Hookdeck dashboard](https://dashboard.hookdeck.com)
+2. Update your `.env` file for each environment:
+   - Set `HOOKDECK_API_KEY` to the corresponding project's API key
+   - Set `PROD_DESTINATION_URL` to the appropriate server URL (development, staging, or production)
+
+**Separate Chargebee Sites:**
+
+Use separate Chargebee sites for test and production:
+
+1. Use your existing Chargebee site for production
+2. Create a new Chargebee test site or use Chargebee's test mode
+3. Update your development `.env` file:
+   - Set `CHARGEBEE_API_KEY` and `CHARGEBEE_SITE` to your test site credentials
+   - Keep production credentials in your production environment configuration
+
+**Benefits of Separate Environments:**
+
+- Complete isolation between test and production webhook traffic
+- Separate monitoring and alerting for production events
+- Safe testing of breaking changes without affecting production
+- Clear separation of test data from production customer data
+- Independent scaling and rate limiting per environment
+
+After creating separate environments, run the setup script in each environment to create identical infrastructure with environment-specific configurations.
+
+### Verification
+
+After running the production setup, verify that everything is configured correctly:
+
+1. **Check the Hookdeck dashboard**: Confirm that Connections are created or updated with the correct destination URLs
+2. **Verify the Chargebee webhook endpoint**: Log into your Chargebee site and check that the webhook endpoint points to your production Hookdeck Source URL
+3. **Trigger a test event**: Create a test customer or subscription in your Chargebee production/live site
+4. **Confirm event flow**: Verify that events appear in the Hookdeck dashboard and are successfully delivered to your production handlers
+
+The consistency between your development and production setups ensures that the behavior you tested locally matches what runs in production. Any routing rules, authentication configurations, or event filters work identically in both environments.
 
 ## Tips and Best Practices
 
