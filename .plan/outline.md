@@ -263,6 +263,15 @@ Tutorial code examples should include:
 
 # **Full Tutorial Outline**
 
+> **Status:** This outline represents the original proposed structure. The final implemented tutorial (see `tutorial.md`) follows a streamlined, action-oriented approach with these key changes:
+>
+> - Removed detailed Step 5 (Observability) and Step 6 (Monitoring) sections
+> - Integrated CLI usage into Step 4 (Testing)
+> - Added Step 5 (Deploy to Production)
+> - Condensed observability and monitoring into "Tips and Best Practices"
+> - Added "Conclusion" with CTAs
+> - Maintained focus on practical, action-oriented workflow
+
 Below is the full outline you can share with Chargebee as the proposed structure for the collaborative tutorial.
 
 ## Reliable Subscription & Customer Automation with Chargebee Webhooks and the Hookdeck Event Gateway
@@ -528,3 +537,28 @@ Links to:
 - Hookdeck Event Gateway docs
 
 - Example repos (if included)
+
+# **7. Actual Tutorial Implementation Notes**
+
+The tutorial in `tutorial.md` implements the core concepts from this style guide with the following structure:
+
+1. **Introduction** - Business use cases and reliability challenges
+2. **Prerequisites** - Required accounts and tools
+3. **Architecture Overview** - Event routing design
+4. **Step 1 — Create Hookdeck Event Gateway Connections** - Source and Connection setup via API
+5. **Step 2 — Create Chargebee Webhook Endpoint** - Webhook configuration via API
+6. **Step 3 — Implement Handlers** - Minimal handlers for customer, subscription, payment events
+7. **Step 4 — Test the Integration** - Testing workflow with integrated CLI usage for event inspection and retry
+8. **Step 5 — Deploy to Production** - Production deployment with environment configuration guidance
+9. **Tips and Best Practices** - Concise best practices with documentation links
+10. **Conclusion** - Summary with balanced Chargebee/Hookdeck coverage and CTAs
+11. **Additional Resources** - Documentation and repository links
+
+### Key Implementation Decisions:
+
+- **Action-oriented approach**: Removed detailed observability/monitoring sections (Steps 5-6 from original outline) in favor of practical tips section
+- **CLI integration**: Moved CLI usage into Step 4 as a natural part of the development workflow
+- **Production focus**: Added Step 5 for production deployment with environment configuration options
+- **Terminology alignment**: Used "retry" consistently (not "replay" as in outline)
+- **Balanced coverage**: Equal emphasis on Chargebee webhook system and Hookdeck Event Gateway reliability
+- **Multiple environment support**: Guidance for dev, staging, and production setups
