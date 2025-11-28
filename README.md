@@ -1,4 +1,4 @@
-# Chargebee Billing Hookdeck Demo
+# Chargebee Billing Hookdeck Event Gateway Demo
 
 A production-ready TypeScript Express.js application for reliable [Chargebee](https://www.chargebee.com) webhook integration using the [Hookdeck](https://hookdeck.com) Event Gateway. This demo provides programmatic setup, filtered event routing, and focused handlers for subscription lifecycle automation.
 
