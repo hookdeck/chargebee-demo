@@ -76,7 +76,7 @@ Before running the script, understand what it does by examining the code.
 
 ### Creating the Event Gateway Source
 
-The Source provides the webhook URL that Chargebee will send events to. It also configures authentication to validate the source of the webhook requests:
+The Source provides the webhook URL that Chargebee will send events to. It also configures authentication to validate the source of the webhook requests.
 
 ```typescript
 const sourceResponse = await fetch(
