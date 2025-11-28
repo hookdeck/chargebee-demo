@@ -324,23 +324,11 @@ Hookdeck will forward webhook events from Chargebee to your production endpoints
 
 ## Idempotency
 
-Implement idempotency checks in your handlers to ensure operations like provisioning access or charging customers happen exactly once per event. Use the event `id` field to track processed events:
+Implement idempotency in your handlers to ensure operations like provisioning access or charging customers happen exactly once per event. Store processed event IDs using the event `id` field to track which events you've already handled.
 
-```typescript
-// Check if event has already been processed
-const isProcessed = await checkEventProcessed(id);
-if (isProcessed) {
-  res.status(200).json({ received: true, event_id: id });
-  return;
-}
+The handlers include TODO comments marking where to add idempotency checks. A complete idempotency implementation with retry-on-failure is detailed in the companion tutorial. The pattern uses atomic event claiming with cleanup on failure to enable Event Gateway retries.
 
-// Process the event...
-
-// Mark as processed after successful handling
-await markEventAsProcessed(id);
-```
-
-While Hookdeck reduces duplicate delivery through its retry mechanisms, network issues or application restarts can cause the same event to be delivered multiple times. Handler-level deduplication ensures your business logic executes only once.
+While the Event Gateway reduces duplicate delivery, network issues or application restarts can cause the same event to be delivered multiple times, making handler-level deduplication essential.
 
 ## License
 
