@@ -108,7 +108,9 @@ async function updateChargebeeWebhookEndpoint(
     basic_auth_password: password,
   });
 
-  eventTypes.forEach((event) => params.append("webhook_events[]", event));
+  eventTypes.forEach((event, index) => {
+    params.append(`enabled_events[${index}]`, event);
+  });
 
   const response = await fetch(
     `https://${siteName}.chargebee.com/api/v2/webhook_endpoints/${endpointId}`,
@@ -138,7 +140,6 @@ async function createChargebeeWebhookEndpoint(
   console.log("   Creating Chargebee webhook endpoint...");
 
   const auth = Buffer.from(`${apiKey}:`).toString("base64");
-
   const eventTypes = [...ALL_WEBHOOK_EVENTS];
 
   const params = new URLSearchParams({
@@ -149,7 +150,9 @@ async function createChargebeeWebhookEndpoint(
     basic_auth_password: password,
   });
 
-  eventTypes.forEach((event) => params.append("webhook_events[]", event));
+  eventTypes.forEach((event, index) => {
+    params.append(`enabled_events[${index}]`, event);
+  });
 
   const response = await fetch(
     `https://${siteName}.chargebee.com/api/v2/webhook_endpoints`,
@@ -172,7 +175,7 @@ async function createChargebeeWebhookEndpoint(
 // Main script logic
 async function setupHookdeckConnections(mode: Mode): Promise<string> {
   console.log(
-    `\n🔧 Setting up Hookdeck connections in ${mode.toUpperCase()} mode...\n`,
+    `\n🔧 Setting up Hookdeck Event Gateway connections in ${mode.toUpperCase()} mode...\n`,
   );
 
   // Get Hookdeck API key
