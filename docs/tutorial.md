@@ -1,6 +1,6 @@
-# Reliable Subscription & Customer Automation with Chargebee Billing Webhooks and the Hookdeck Event Gateway
+# Reliable Subscription & Customer Automation with Chargebee Webhooks and the Hookdeck Event Gateway
 
-Chargebee Billing webhooks enable business automation around your subscription lifecycle. You can provision access when subscriptions are created, update user entitlements when plans change, extend access on successful renewals, sync customer data to internal systems, track revenue from payments, and trigger email notifications for lifecycle events.
+Chargebee webhooks enable business automation around your subscription lifecycle. You can provision access when subscriptions are created, update user entitlements when plans change, extend access on successful renewals, sync customer data to internal systems, track revenue from payments, and trigger email notifications for lifecycle events.
 
 This tutorial shows you how to build reliable handlers for subscription, customer, and payment events. You create focused handlers for each event type and use event routing to separate concerns in your application.
 
@@ -15,7 +15,7 @@ Chargebee → Hookdeck Event Gateway → Application Endpoints
                                     └─ /webhooks/chargebee/payments
 ```
 
-If you prefer to dive directly into the code, you can find the complete implementation in the [Chargebee Billing Hookdeck demo GitHub repository](https://github.com/hookdeck/chargebee-billing-demo).
+If you prefer to dive directly into the code, you can find the complete implementation in the [Chargebee Hookdeck demo GitHub repository](https://github.com/hookdeck/chargebee-billing-demo).
 
 ## Prerequisites
 
@@ -152,22 +152,26 @@ The subscription and payment Connections follow the same pattern with different 
 
 See the [Event Gateway Connection Rules documentation](https://hookdeck.com/docs/connections#connection-rules?ref=chargebee) for details on Filters and other supported rules including deduplication and transformation.
 
-## Step 2 — Programmatically Create the Chargebee Billing Webhook Endpoint
+## Step 2 — Programmatically Create the Chargebee Webhook Endpoint
 
 Configure Chargebee to send events to the Event Gateway Source URL. The same setup script also creates the Chargebee webhook endpoint.
 
 ### Creating the Webhook Endpoint
 
 ```typescript
+import * as chargebee from "chargebee";
+
+// Initialize the SDK (one-time setup)
+chargebee.configure({
+  site: siteName,
+  api_key: apiKey,
+});
+
 async function createChargebeeWebhookEndpoint(
-  apiKey: string,
-  siteName: string,
   webhookUrl: string,
   username: string,
   password: string,
 ): Promise<void> {
-  const auth = Buffer.from(`${apiKey}:`).toString("base64");
-
   // List of webhook events to subscribe to
   const eventTypes = [
     "customer_created",
@@ -178,40 +182,22 @@ async function createChargebeeWebhookEndpoint(
     "payment_succeeded",
   ];
 
-  const params = new URLSearchParams({
-    name: "Hookdeck Webhook Endpoint",
-    url: webhookUrl,
-    api_version: "v2",
-    basic_auth_username: username,
-    basic_auth_password: password,
-  });
-
-  eventTypes.forEach((event, index) => {
-    params.append(`enabled_events[${index}]`, event);
-  });
-
-  const response = await fetch(
-    `https://${siteName}.chargebee.com/api/v2/webhook_endpoints`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${auth}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: params,
-    },
-  );
-
-  if (!response.ok) {
-    const data = await response.json();
-    throw new Error(`HTTP ${response.status}: ${JSON.stringify(data)}`);
-  }
+  await chargebee.webhook_endpoint
+    .create({
+      name: "Hookdeck Webhook Endpoint",
+      url: webhookUrl,
+      api_version: "v2",
+      basic_auth_username: username,
+      basic_auth_password: password,
+      enabled_events: eventTypes,
+    })
+    .request();
 }
 ```
 
 The `url` parameter uses the Event Gateway Source URL. The Basic Auth credentials must match those configured in the Source, or requests will fail authentication.
 
-This example shows six essential event types. The actual implementation uses `ALL_WEBHOOK_EVENTS` from `scripts/shared.ts`, which includes all 21 Chargebee Billing webhook events for production use. The full script also checks for existing endpoints and updates them instead of creating duplicates.
+This example shows six essential event types. The actual implementation uses `ALL_WEBHOOK_EVENTS` from `scripts/shared.ts`, which includes all 21 Chargebee webhook events for production use. The full script also checks for existing endpoints and updates them instead of creating duplicates.
 
 ### Running the Setup Script
 
@@ -419,77 +405,13 @@ You are responsible for implementing idempotency in your handlers. Use the event
 
 While the Event Gateway can reduce duplicate delivery through its [deduplication feature](https://hookdeck.com/docs/deduplication?ref=chargebee), it doesn't eliminate the need for handler-level deduplication. Network issues or application restarts can cause the same event to be delivered multiple times.
 
-**Simple Idempotency with Retry on Failure**
+**Implementation approaches:**
 
-Record the event first to prevent duplicate processing, and clean up on failure to allow the Event Gateway to retry:
+1. **Database-backed tracking**: Store processed event IDs in a database table with a unique constraint
+2. **Redis/cache-based**: Use Redis with TTL for temporary deduplication
+3. **Application state**: For stateless handlers, use external state management
 
-```typescript
-export async function handleCustomerWebhook(
-  req: Request,
-  res: Response,
-): Promise<void> {
-  let claimed = false;
-
-  try {
-    const { id, event_type, content } = req.body;
-
-    // Check if already processed
-    const existing = await db.processedEvents.findOne({ eventId: id });
-    if (existing) {
-      res.status(200).json({ received: true, event_id: id });
-      return;
-    }
-
-    // Atomically claim this event
-    try {
-      await db.processedEvents.create({
-        eventId: id,
-        processedAt: new Date(),
-      });
-      claimed = true;
-    } catch (error) {
-      // Another instance claimed it
-      if (error.code === "ER_DUP_ENTRY" || error.code === "23505") {
-        res.status(200).json({ received: true, event_id: id });
-        return;
-      }
-      throw error;
-    }
-
-    // Process the event
-    switch (event_type) {
-      case "customer_created":
-        // Handle customer creation
-        break;
-    }
-
-    res.status(200).json({ received: true, event_id: id });
-  } catch (error) {
-    // Clean up so Event Gateway can retry
-    if (claimed) {
-      try {
-        await db.processedEvents.delete({ eventId: id });
-      } catch (deleteError) {
-        // If delete fails, log it but still return 500 to trigger retry
-        console.error(`Failed to delete event ${id}:`, deleteError);
-      }
-    }
-    res.status(500).json({ error: "Internal server error" });
-  }
-}
-```
-
-Ensure your `processedEvents` table has a unique constraint on the `eventId` column:
-
-```sql
-CREATE TABLE processed_events (
-  id SERIAL PRIMARY KEY,
-  event_id VARCHAR(255) UNIQUE NOT NULL,
-  processed_at TIMESTAMP NOT NULL
-);
-```
-
-This pattern prevents duplicate processing while allowing retries on failure. The `claimed` flag ensures we only delete records we created, preventing interference with other instances.
+The specific implementation depends on your technology stack and requirements. See the [Event Gateway best practices](https://hookdeck.com/docs/best-practices?ref=chargebee) for detailed patterns.
 
 ## Step 4 — Testing the Flow End-to-End
 
@@ -574,91 +496,38 @@ A successful test produces these results:
 - Event Gateway marks the delivery as successful with a 200 OK response
 - No errors appear in application logs or the Hookdeck dashboard
 
-### Inspecting and Retrying Events with the CLI
+### Inspecting and Retrying Events
 
-When developing locally, the Hookdeck CLI provides an interactive terminal interface for real-time event inspection and retry capabilities. This streamlines your development workflow by letting you debug webhook handlers quickly without repeatedly triggering new events from Chargebee.
-
-The CLI displays events in an interactive list as they flow from Chargebee through the Event Gateway to your local handlers. Navigate through events using keyboard shortcuts, press `d` to inspect full payloads and response details, and use `r` to retry events directly to your current handler code. This creates a fast debugging cycle: inspect an event, update your handler code, retry the event, and verify the fix—all without leaving your terminal.
-
-Testing with real Chargebee event data means your handlers encounter the exact field structure, edge cases, and data variations they'll handle in production. The convenience of retrying events directly from your terminal keeps you in your development environment, avoiding context switches to the Chargebee dashboard.
-
-For full command documentation, keyboard shortcuts, and advanced CLI features, see the [Hookdeck CLI documentation](https://hookdeck.com/docs/cli?ref=chargebee).
+The Hookdeck CLI provides interactive event inspection and retry capabilities. Navigate events with keyboard shortcuts, press `d` to inspect payloads, and `r` to retry events. See the [CLI documentation](https://hookdeck.com/docs/cli?ref=chargebee) for full details.
 
 ### Troubleshooting
 
-Common issues and solutions:
+Common issues:
 
-- **Event not reaching the Event Gateway**: Verify the webhook endpoint URL in Chargebee matches the Source URL. Check that Basic Auth credentials match between Chargebee and the Event Gateway. You'll see authentication errors in the **Requests** section of the Hookdeck dashboard if they don't match.
-- **Event not routed**: Check Connection filter rules in the Hookdeck dashboard. Verify that the event type matches your filter patterns (`customer_`, `subscription_`, `payment_succeeded`). Requests that don't match any Connection rules are marked as **Filtered** in the **Requests** section.
-- **Handler errors**: Check application logs for error messages. Verify that the handler is correctly extracting data from the payload structure.
-- **Authentication issues**: Confirm that the Basic Auth credentials in your `.env` file match what you configured in the Event Gateway and Chargebee. Check that Hookdeck signature verification middleware is configured correctly.
+- **Event not reaching Event Gateway**: Verify webhook endpoint URL and Basic Auth credentials match between Chargebee and Event Gateway
+- **Event not routed**: Check Connection filter rules match your event types (`customer_`, `subscription_`, `payment_succeeded`)
+- **Handler errors**: Check application logs and verify payload data extraction
 
 ## Step 5 — Deploy to Production
 
 After testing your integration locally and confirming that events flow correctly through the Event Gateway to your handlers, you're ready to deploy to production. The same setup script (`scripts/upsert-connections.ts`) that created your development infrastructure works for production environments with production environment variables. This ensures your production environment matches your tested development configuration.
 
-### Running the Production Setup
+### Quick Production Setup
 
-Execute the setup script in production mode to create or update your production infrastructure:
+For your first production deployment, use the same Hookdeck project and Chargebee site as development:
 
-```bash
-npm run connections:upsert:prod
-```
-
-This command performs the following operations:
-
-- Creates or updates Event Gateway Connections with HTTP destinations (not CLI) pointing to your production servers
-- Uses the `PROD_DESTINATION_URL` environment variable for destination URLs
-- Creates or updates the Chargebee webhook endpoint to point to your production Hookdeck Source
+1. Set `PROD_DESTINATION_URL` to your production server URL
+2. Run `npm run connections:upsert:prod` to update Connection destinations
 
 ![Hookdeck dashboard showing three Event Gateway Connections with HTTP Destinations for Chargebee events: chargebee-customer routing to /webhooks/chargebee/customer, chargebee-subscription routing to /webhooks/chargebee/subscription, and chargebee-payment routing to /webhooks/chargebee/payments](images/event-gateway-connections-prod.png)
 
 _Caption: Event Gateway Connections in the Hookdeck dashboard routing Chargebee events to specific production handlers_
 
-### Initial Production Deployment
+### Multiple Environment Setup
 
-For your first deployment to production, you can use the same [Hookdeck project](https://hookdeck.com/docs/projects?ref=chargebee) and Chargebee site that you used for development:
+For ongoing development, set up separate Hookdeck projects and Chargebee sites for test and production environments. This prevents test events from mixing with production data and allows safe testing of breaking changes.
 
-1. Update your environment variables:
-   - Set `PROD_DESTINATION_URL` to your production server URL
-   - Keep `CHARGEBEE_API_KEY`, `CHARGEBEE_SITE`, and `HOOKDECK_API_KEY` unchanged
-
-2. Run the setup script to update your Connections to point to production handlers
-
-This approach gets your integration into production quickly without managing multiple environments.
-
-### Setting Up Separate Test and Production Environments
-
-After your initial production deployment, create separate test and production environments for safer development workflows. This is the **recommended approach for ongoing development** and prevents test events from mixing with production data.
-
-**Separate Hookdeck Projects:**
-
-Create dedicated Hookdeck projects for each environment. You can have as many projects as you need—common setups include development, staging, and production:
-
-1. Create a new [Hookdeck project](https://hookdeck.com/docs/projects?ref=chargebee) for each environment in the [Hookdeck dashboard](https://dashboard.hookdeck.com?ref=chargebee)
-2. Update your `.env` file for each environment:
-   - Set `HOOKDECK_API_KEY` to the corresponding project's API key
-   - Set `PROD_DESTINATION_URL` to the appropriate server URL (development, staging, or production)
-
-**Separate Chargebee Sites:**
-
-Use separate Chargebee sites for test and production:
-
-1. Use your existing Chargebee site for production
-2. Create a new Chargebee test site or use Chargebee's test mode
-3. Update your development `.env` file:
-   - Set `CHARGEBEE_API_KEY` and `CHARGEBEE_SITE` to your test site credentials
-   - Keep production credentials in your production environment configuration
-
-**Benefits of Separate Environments:**
-
-- Complete isolation between test and production webhook traffic
-- Separate monitoring and alerting for production events
-- Safe testing of breaking changes without affecting production
-- Clear separation of test data from production customer data
-- Independent scaling and rate limiting per environment
-
-After creating separate environments, run the setup script in each environment to create identical infrastructure with environment-specific configurations.
+See the [Hookdeck Projects documentation](https://hookdeck.com/docs/projects?ref=chargebee) for guidance on creating separate projects for development, staging, and production.
 
 ### Verification
 
@@ -671,20 +540,6 @@ After running the production setup, verify that everything is configured correct
 
 The consistency between your development and production setups ensures that the behavior you tested locally matches what runs in production. Any routing rules, authentication configurations, or event filters work identically in both environments.
 
-## Tips and Best Practices
-
-Follow these practices to build reliable and maintainable webhook integrations:
-
-- **Idempotency**: Implement the idempotency pattern shown in Step 3 to handle duplicate events safely. Store processed event IDs and use the event `id` field as your deduplication key.
-
-- **Monitoring**: Set up Issue Triggers for critical Connections to receive alerts when delivery fails. Configure Issue Triggers for your subscription and payment Connections first, as these directly impact revenue and customer access. See the [Hookdeck Issues documentation](https://hookdeck.com/docs/issues?ref=chargebee) for configuration details.
-
-- **Delivery Rate Management**: Configure destination rate limits to prevent overwhelming your servers during high-traffic periods. Set maximum delivery rates that match your application's processing capacity. For details on configuring rate limits, see the [Hookdeck Destinations documentation](https://hookdeck.com/docs/destinations?ref=chargebee).
-
-- **Event Retries**: Use the dashboard or API for bulk retry operations when recovering from handler failures or application downtime. After resolving issues, retry failed events to complete missed operations. Learn more in the [Hookdeck Retries documentation](https://hookdeck.com/docs/retries?ref=chargebee).
-
-- **Testing**: Always test with Chargebee's test site before deploying to production. Create test customers, subscriptions, and payments to verify your handlers work correctly with real event structures. Testing in Chargebee's test environment prevents errors from affecting actual customer data.
-
 ## Conclusion
 
 You've built a reliable webhook integration that handles Chargebee subscription, customer, and payment events using infrastructure as code. The setup script programmatically creates Event Gateway Connections and Chargebee webhook endpoints, ensuring consistency across development and production environments.
@@ -695,7 +550,7 @@ You tested the complete flow using the Hookdeck CLI for local development, verif
 
 ### Next Steps
 
-Explore the complete implementation in the [Chargebee Billing with Hookdeck Event Gateway repository](https://github.com/hookdeck/chargebee-billing-demo) to see production-ready handler code with detailed logging and error handling.
+Explore the complete implementation in the [Chargebee with Hookdeck Event Gateway repository](https://github.com/hookdeck/chargebee-billing-demo) to see production-ready handler code with detailed logging and error handling.
 
 Continue building on this foundation:
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env ts-node
 
 import * as dotenv from "dotenv";
+import chargebee from "chargebee";
 import {
   Mode,
   Source,
@@ -17,6 +18,12 @@ import {
 } from "./shared";
 
 dotenv.config();
+
+// Initialize Chargebee SDK
+chargebee.configure({
+  site: getEnvVar("CHARGEBEE_SITE"),
+  api_key: getEnvVar("CHARGEBEE_API_KEY"),
+});
 
 // Hookdeck API functions
 async function upsertHookdeckSource(
@@ -62,26 +69,14 @@ async function upsertHookdeckConnection(
 }
 
 // Chargebee API functions
-async function getChargebeeWebhookEndpoints(
-  apiKey: string,
-  siteName: string,
-): Promise<ChargebeeWebhookEndpoint[]> {
+async function getChargebeeWebhookEndpoints(): Promise<
+  ChargebeeWebhookEndpoint[]
+> {
   console.log("   Fetching existing Chargebee webhook endpoints...");
 
-  const auth = Buffer.from(`${apiKey}:`).toString("base64");
-
   try {
-    const response = await makeHttpRequest(
-      `https://${siteName}.chargebee.com/api/v2/webhook_endpoints`,
-      "GET",
-      {
-        Authorization: `Basic ${auth}`,
-      },
-      undefined,
-      "json",
-    );
-
-    return response.list?.map((item: any) => item.webhook_endpoint) || [];
+    const result = await chargebee.webhook_endpoint.list().request();
+    return result.list.map((item: any) => item.webhook_endpoint) || [];
   } catch (err) {
     console.error("  Failed to fetch webhook endpoints:", err);
     return [];
@@ -89,8 +84,6 @@ async function getChargebeeWebhookEndpoints(
 }
 
 async function updateChargebeeWebhookEndpoint(
-  apiKey: string,
-  siteName: string,
   endpointId: string,
   webhookUrl: string,
   username: string,
@@ -98,78 +91,34 @@ async function updateChargebeeWebhookEndpoint(
 ): Promise<void> {
   console.log("   Updating Chargebee webhook endpoint...");
 
-  const auth = Buffer.from(`${apiKey}:`).toString("base64");
-  const eventTypes = [...ALL_WEBHOOK_EVENTS];
-
-  const params = new URLSearchParams({
-    url: webhookUrl,
-    api_version: "v2",
-    basic_auth_username: username,
-    basic_auth_password: password,
-  });
-
-  eventTypes.forEach((event, index) => {
-    params.append(`enabled_events[${index}]`, event);
-  });
-
-  const response = await fetch(
-    `https://${siteName}.chargebee.com/api/v2/webhook_endpoints/${endpointId}`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${auth}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: params,
-    },
-  );
-
-  if (!response.ok) {
-    const data = await response.json();
-    throw new Error(`HTTP ${response.status}: ${JSON.stringify(data)}`);
-  }
+  await chargebee.webhook_endpoint
+    .update(endpointId, {
+      url: webhookUrl,
+      api_version: "v2",
+      basic_auth_username: username,
+      basic_auth_password: password,
+      enabled_events: [...ALL_WEBHOOK_EVENTS] as any,
+    })
+    .request();
 }
 
 async function createChargebeeWebhookEndpoint(
-  apiKey: string,
-  siteName: string,
   webhookUrl: string,
   username: string,
   password: string,
 ): Promise<void> {
   console.log("   Creating Chargebee webhook endpoint...");
 
-  const auth = Buffer.from(`${apiKey}:`).toString("base64");
-  const eventTypes = [...ALL_WEBHOOK_EVENTS];
-
-  const params = new URLSearchParams({
-    name: "Hookdeck Webhook Endpoint",
-    url: webhookUrl,
-    api_version: "v2",
-    basic_auth_username: username,
-    basic_auth_password: password,
-  });
-
-  eventTypes.forEach((event, index) => {
-    params.append(`enabled_events[${index}]`, event);
-  });
-
-  const response = await fetch(
-    `https://${siteName}.chargebee.com/api/v2/webhook_endpoints`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${auth}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: params,
-    },
-  );
-
-  if (!response.ok) {
-    const data = await response.json();
-    throw new Error(`HTTP ${response.status}: ${JSON.stringify(data)}`);
-  }
+  await chargebee.webhook_endpoint
+    .create({
+      name: "Hookdeck Webhook Endpoint",
+      url: webhookUrl,
+      api_version: "v2",
+      basic_auth_username: username,
+      basic_auth_password: password,
+      enabled_events: [...ALL_WEBHOOK_EVENTS] as any,
+    })
+    .request();
 }
 
 // Main script logic
@@ -300,17 +249,12 @@ async function setupChargebeeWebhook(
     `\n🔧 Setting up Chargebee webhook in ${mode.toUpperCase()} mode...\n`,
   );
 
-  const chargebeeApiKey = getEnvVar("CHARGEBEE_API_KEY");
-  const chargebeeSite = getEnvVar("CHARGEBEE_SITE");
   const webhookUsername = getEnvVar("CHARGEBEE_WEBHOOK_USERNAME");
   const webhookPassword = getEnvVar("CHARGEBEE_WEBHOOK_PASSWORD");
 
   // Check if webhook endpoint already exists
   console.log("Checking for existing webhook endpoints...");
-  const existingEndpoints = await getChargebeeWebhookEndpoints(
-    chargebeeApiKey,
-    chargebeeSite,
-  );
+  const existingEndpoints = await getChargebeeWebhookEndpoints();
 
   // Look for an existing endpoint with the name "Hookdeck Webhook Endpoint"
   const hookdeckEndpoint = existingEndpoints.find(
@@ -321,8 +265,6 @@ async function setupChargebeeWebhook(
     // Update existing endpoint
     console.log("   Webhook endpoint already exists. Updating...");
     await updateChargebeeWebhookEndpoint(
-      chargebeeApiKey,
-      chargebeeSite,
       hookdeckEndpoint.id,
       hookdeckSourceUrl,
       webhookUsername,
@@ -332,8 +274,6 @@ async function setupChargebeeWebhook(
   } else {
     // Create new webhook endpoint
     await createChargebeeWebhookEndpoint(
-      chargebeeApiKey,
-      chargebeeSite,
       hookdeckSourceUrl,
       webhookUsername,
       webhookPassword,

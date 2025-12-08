@@ -1,10 +1,10 @@
-# Chargebee Billing Hookdeck Event Gateway Demo
+# Chargebee Hookdeck Event Gateway Demo
 
 A production-ready TypeScript Express.js application for reliable [Chargebee](https://www.chargebee.com) webhook integration using the [Hookdeck](https://hookdeck.com) Event Gateway. This demo provides programmatic setup, filtered event routing, and focused handlers for subscription lifecycle automation.
 
 ## Overview
 
-This project demonstrates how to build reliable webhook handlers for [Chargebee Billing](https://www.chargebee.com) subscription, customer, and payment events. Chargebee webhooks enable business automation around your subscription lifecycle—provision access when subscriptions are created, update user entitlements when plans change, extend access on successful renewals, sync customer data to internal systems, track revenue from payments, and trigger notifications for lifecycle events.
+This project demonstrates how to build reliable webhook handlers for [Chargebee](https://www.chargebee.com) subscription, customer, and payment events. Chargebee webhooks enable business automation around your subscription lifecycle—provision access when subscriptions are created, update user entitlements when plans change, extend access on successful renewals, sync customer data to internal systems, track revenue from payments, and trigger notifications for lifecycle events.
 
 The application uses the [Hookdeck Event Gateway](https://hookdeck.com) to solve common webhook reliability challenges: automatic retries for network failures, duplicate detection to prevent double-processing, filtered event routing to separate concerns, and comprehensive observability for debugging.
 
