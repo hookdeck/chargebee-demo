@@ -1,7 +1,7 @@
 #!/usr/bin/env ts-node
 
 import * as dotenv from "dotenv";
-import chargebee from "chargebee";
+import ChargeBee from "chargebee";
 import {
   Mode,
   Source,
@@ -20,9 +20,9 @@ import {
 dotenv.config();
 
 // Initialize Chargebee SDK
-chargebee.configure({
+const chargebeeClient = new ChargeBee({
   site: getEnvVar("CHARGEBEE_SITE"),
-  api_key: getEnvVar("CHARGEBEE_API_KEY"),
+  apiKey: getEnvVar("CHARGEBEE_API_KEY"),
 });
 
 // Hookdeck API functions
@@ -75,7 +75,7 @@ async function getChargebeeWebhookEndpoints(): Promise<
   console.log("   Fetching existing Chargebee webhook endpoints...");
 
   try {
-    const result = await chargebee.webhook_endpoint.list().request();
+    const result = await chargebeeClient.webhookEndpoint.list({});
     return result.list.map((item: any) => item.webhook_endpoint) || [];
   } catch (err) {
     console.error("  Failed to fetch webhook endpoints:", err);
@@ -91,15 +91,13 @@ async function updateChargebeeWebhookEndpoint(
 ): Promise<void> {
   console.log("   Updating Chargebee webhook endpoint...");
 
-  await chargebee.webhook_endpoint
-    .update(endpointId, {
-      url: webhookUrl,
-      api_version: "v2",
-      basic_auth_username: username,
-      basic_auth_password: password,
-      enabled_events: [...ALL_WEBHOOK_EVENTS] as any,
-    })
-    .request();
+  await chargebeeClient.webhookEndpoint.update(endpointId, {
+    url: webhookUrl,
+    api_version: "v2",
+    basic_auth_username: username,
+    basic_auth_password: password,
+    enabled_events: [...ALL_WEBHOOK_EVENTS] as any,
+  });
 }
 
 async function createChargebeeWebhookEndpoint(
@@ -109,16 +107,14 @@ async function createChargebeeWebhookEndpoint(
 ): Promise<void> {
   console.log("   Creating Chargebee webhook endpoint...");
 
-  await chargebee.webhook_endpoint
-    .create({
-      name: "Hookdeck Webhook Endpoint",
-      url: webhookUrl,
-      api_version: "v2",
-      basic_auth_username: username,
-      basic_auth_password: password,
-      enabled_events: [...ALL_WEBHOOK_EVENTS] as any,
-    })
-    .request();
+  await chargebeeClient.webhookEndpoint.create({
+    name: "Hookdeck Webhook Endpoint",
+    url: webhookUrl,
+    api_version: "v2",
+    basic_auth_username: username,
+    basic_auth_password: password,
+    enabled_events: [...ALL_WEBHOOK_EVENTS] as any,
+  });
 }
 
 // Main script logic

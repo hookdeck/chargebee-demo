@@ -159,12 +159,12 @@ Configure Chargebee to send events to the Event Gateway Source URL. The same set
 ### Creating the Webhook Endpoint
 
 ```typescript
-import * as chargebee from "chargebee";
+import ChargeBee from "chargebee";
 
 // Initialize the SDK (one-time setup)
-chargebee.configure({
+const chargebee = new ChargeBee({
   site: siteName,
-  api_key: apiKey,
+  apiKey: apiKey,
 });
 
 async function createChargebeeWebhookEndpoint(
@@ -182,16 +182,14 @@ async function createChargebeeWebhookEndpoint(
     "payment_succeeded",
   ];
 
-  await chargebee.webhook_endpoint
-    .create({
-      name: "Hookdeck Webhook Endpoint",
-      url: webhookUrl,
-      api_version: "v2",
-      basic_auth_username: username,
-      basic_auth_password: password,
-      enabled_events: eventTypes,
-    })
-    .request();
+  await chargebee.webhookEndpoint.create({
+    name: "Hookdeck Webhook Endpoint",
+    url: webhookUrl,
+    api_version: "v2",
+    basic_auth_username: username,
+    basic_auth_password: password,
+    enabled_events: eventTypes,
+  });
 }
 ```
 
