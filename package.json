@@ -23,7 +23,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "chargebee": "^3.16.0",
+    "chargebee": "^3.16.2",
     "dotenv": "^16.3.1",
     "express": "^4.18.2"
   },

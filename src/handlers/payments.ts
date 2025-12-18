@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { WebhookEventType, WebhookEvent } from "chargebee";
 
 /**
  * Payment Webhook Handler
@@ -14,7 +15,7 @@ export function handlePaymentsWebhook(req: Request, res: Response): void {
   try {
     // Extract event data from Chargebee webhook payload
     // Payload structure: { id, event_type, content: { customer/subscription/... } }
-    const { id, event_type, content } = req.body;
+    const { id, event_type } = req.body;
 
     // TODO: Check if event has already been processed (idempotency)
     // Use event.id to track processed events in your database
@@ -26,20 +27,15 @@ export function handlePaymentsWebhook(req: Request, res: Response): void {
     console.log("Timestamp:", new Date().toISOString());
     console.log("=".repeat(50));
 
-    const transaction = content?.transaction;
-
-    if (!transaction) {
-      console.warn("No transaction data in payload");
-      res.status(200).json({ received: true, warning: "No transaction data" });
-      return;
-    }
-
     // Handle payment events
-    if (event_type === "payment_succeeded") {
+    if (event_type === WebhookEventType.PaymentSucceeded) {
+      const paymentSucceededEvent: WebhookEvent<WebhookEventType.PaymentSucceeded> =
+        req.body;
+      const transaction = paymentSucceededEvent.content.transaction;
       console.log(`✅ Payment succeeded: ${transaction.id}`);
       console.log(`   Customer ID: ${transaction.customer_id}`);
       console.log(
-        `   Amount: ${transaction.amount / 100} ${transaction.currency_code}`,
+        `   Amount: ${transaction.amount! / 100} ${transaction.currency_code}`,
       );
       console.log(`   Subscription ID: ${transaction.subscription_id}`);
       // TODO: Update revenue metrics
@@ -53,7 +49,6 @@ export function handlePaymentsWebhook(req: Request, res: Response): void {
       received: true,
       event_id: id,
       event_type,
-      transaction_id: transaction.id,
     });
   } catch (error) {
     console.error("❌ Error processing payment webhook:", error);

@@ -1,14 +1,13 @@
 #!/usr/bin/env ts-node
 
 import * as dotenv from "dotenv";
-import ChargeBee from "chargebee";
+import Chargebee, { type WebhookEndpoint } from "chargebee";
 import {
   Mode,
   Source,
   HookdeckConnection,
   HookdeckConnectionResponse,
   HookdeckSource,
-  ChargebeeWebhookEndpoint,
   getEnvVar,
   makeHttpRequest,
   PROJECT_SOURCE_NAME,
@@ -20,7 +19,7 @@ import {
 dotenv.config();
 
 // Initialize Chargebee SDK
-const chargebeeClient = new ChargeBee({
+const chargebee = new Chargebee({
   site: getEnvVar("CHARGEBEE_SITE"),
   apiKey: getEnvVar("CHARGEBEE_API_KEY"),
 });
@@ -69,14 +68,12 @@ async function upsertHookdeckConnection(
 }
 
 // Chargebee API functions
-async function getChargebeeWebhookEndpoints(): Promise<
-  ChargebeeWebhookEndpoint[]
-> {
+async function getChargebeeWebhookEndpoints(): Promise<WebhookEndpoint[]> {
   console.log("   Fetching existing Chargebee webhook endpoints...");
 
   try {
-    const result = await chargebeeClient.webhookEndpoint.list({});
-    return result.list.map((item: any) => item.webhook_endpoint) || [];
+    const result = await chargebee.webhookEndpoint.list({});
+    return result.list.map((item) => item.webhook_endpoint) || [];
   } catch (err) {
     console.error("  Failed to fetch webhook endpoints:", err);
     return [];
@@ -91,12 +88,12 @@ async function updateChargebeeWebhookEndpoint(
 ): Promise<void> {
   console.log("   Updating Chargebee webhook endpoint...");
 
-  await chargebeeClient.webhookEndpoint.update(endpointId, {
+  await chargebee.webhookEndpoint.update(endpointId, {
     url: webhookUrl,
     api_version: "v2",
     basic_auth_username: username,
     basic_auth_password: password,
-    enabled_events: [...ALL_WEBHOOK_EVENTS] as any,
+    enabled_events: [...ALL_WEBHOOK_EVENTS],
   });
 }
 
@@ -107,13 +104,13 @@ async function createChargebeeWebhookEndpoint(
 ): Promise<void> {
   console.log("   Creating Chargebee webhook endpoint...");
 
-  await chargebeeClient.webhookEndpoint.create({
+  await chargebee.webhookEndpoint.create({
     name: "Hookdeck Webhook Endpoint",
     url: webhookUrl,
     api_version: "v2",
     basic_auth_username: username,
     basic_auth_password: password,
-    enabled_events: [...ALL_WEBHOOK_EVENTS] as any,
+    enabled_events: [...ALL_WEBHOOK_EVENTS],
   });
 }
 

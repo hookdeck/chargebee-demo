@@ -1,4 +1,5 @@
 // Shared types and utilities for Hookdeck scripts
+import { WebhookEventType } from "chargebee";
 
 // Types
 export type Mode = "dev" | "prod";
@@ -61,14 +62,6 @@ export interface HookdeckDestination {
   cli_path?: string;
 }
 
-export interface ChargebeeWebhookEndpoint {
-  id: string;
-  name?: string;
-  webhook_url: string;
-  api_version?: string;
-  webhook_events?: string[];
-}
-
 // Essential event types for tutorial examples
 export const ESSENTIAL_WEBHOOK_EVENTS = [
   "customer_created",
@@ -82,29 +75,28 @@ export const ESSENTIAL_WEBHOOK_EVENTS = [
 // Complete list of webhook events used in production
 export const ALL_WEBHOOK_EVENTS = [
   // Customer events
-  "customer_created",
-  "customer_updated",
-  "customer_deleted",
-  "customer_changed",
-  "customer_moved_in",
-  "customer_moved_out",
+  WebhookEventType.CustomerCreated,
+  WebhookEventType.CustomerChanged,
+  WebhookEventType.CustomerDeleted,
+  WebhookEventType.CustomerMovedIn,
+  WebhookEventType.CustomerMovedOut,
   // Subscription events
-  "subscription_created",
-  "subscription_started",
-  "subscription_activated",
-  "subscription_changed",
-  "subscription_cancelled",
-  "subscription_reactivated",
-  "subscription_renewed",
-  "subscription_scheduled_cancellation_removed",
-  "subscription_changes_scheduled",
-  "subscription_scheduled_changes_removed",
-  "subscription_shipping_address_updated",
-  "subscription_deleted",
-  "subscription_paused",
-  "subscription_resumed",
+  WebhookEventType.SubscriptionCreated,
+  WebhookEventType.SubscriptionStarted,
+  WebhookEventType.SubscriptionActivated,
+  WebhookEventType.SubscriptionChanged,
+  WebhookEventType.SubscriptionCancelled,
+  WebhookEventType.SubscriptionReactivated,
+  WebhookEventType.SubscriptionRenewed,
+  WebhookEventType.SubscriptionScheduledCancellationRemoved,
+  WebhookEventType.SubscriptionChangesScheduled,
+  WebhookEventType.SubscriptionScheduledChangesRemoved,
+  WebhookEventType.SubscriptionShippingAddressUpdated,
+  WebhookEventType.SubscriptionDeleted,
+  WebhookEventType.SubscriptionResumed,
+  WebhookEventType.SubscriptionPaused,
   // Payment events
-  "payment_succeeded",
+  WebhookEventType.PaymentSucceeded,
 ] as const;
 
 // Utility functions

@@ -159,7 +159,7 @@ Configure Chargebee to send events to the Event Gateway Source URL. The same set
 ### Creating the Webhook Endpoint
 
 ```typescript
-import ChargeBee from "chargebee";
+import Chargebee, { WebhookContentType } from "chargebee";
 
 // Initialize the SDK (one-time setup)
 const chargebee = new ChargeBee({
@@ -174,12 +174,12 @@ async function createChargebeeWebhookEndpoint(
 ): Promise<void> {
   // List of webhook events to subscribe to
   const eventTypes = [
-    "customer_created",
-    "customer_changed",
-    "subscription_created",
-    "subscription_renewed",
-    "subscription_changed",
-    "payment_succeeded",
+    WebhookContentType.CustomerCreated,
+    WebhookContentType.CustomerChanged,
+    WebhookContentType.SubscriptionCreated,
+    WebhookContentType.SubscriptionRenewed,
+    WebhookContentType.SubscriptionChanged,
+    WebhookContentType.PaymentSucceeded,
   ];
 
   await chargebee.webhookEndpoint.create({
@@ -262,29 +262,33 @@ The authentication middleware verifies both the Hookdeck webhook signature and C
 The customer handler processes profile creation and updates in `src/handlers/customer.ts`. When customers are created or modified in Chargebee, this handler receives the event and can sync that data to your internal CRM or database.
 
 ```typescript
+import { WebhookContentType } from "chargebee";
+
 export function handleCustomerWebhook(req: Request, res: Response): void {
   try {
-    const { id, event_type, content } = req.body;
-    const customer = content?.customer;
-
-    if (!customer) {
-      res.status(200).json({ received: true });
-      return;
-    }
+    const { id, event_type } = req.body;
 
     // TODO: Check if event has already been processed (idempotency)
 
     switch (event_type) {
-      case "customer_created":
+      case WebhookEventType.CustomerCreated: {
+        const customerCreatedEvent: WebhookEvent<WebhookEventType.CustomerCreated> =
+          req.body;
+        const customer = customerCreatedEvent.content.customer;
         console.log(`New customer: ${customer.id}`);
         console.log(`Email: ${customer.email}`);
         // Sync customer to internal CRM/database
         break;
+      }
 
-      case "customer_changed":
+      case WebhookEventType.CustomerChanged: {
+        const customerChangedEvent: WebhookEvent<WebhookEventType.CustomerChanged> =
+          req.body;
+        const customer = customerChangedEvent.content.customer;
         console.log(`Customer updated: ${customer.id}`);
         // Update customer record in internal systems
         break;
+      }
     }
 
     // TODO: Mark event as processed (idempotency)
@@ -292,7 +296,6 @@ export function handleCustomerWebhook(req: Request, res: Response): void {
     res.status(200).json({
       received: true,
       event_id: id,
-      customer_id: customer.id,
     });
   } catch (error) {
     res.status(500).json({ error: "Internal server error" });
@@ -309,34 +312,48 @@ The subscription handler manages the subscription lifecycle in `src/handlers/sub
 ```typescript
 export function handleSubscriptionWebhook(req: Request, res: Response): void {
   try {
-    const { id, event_type, content } = req.body;
-    const subscription = content?.subscription;
-
-    if (!subscription) {
-      res.status(200).json({ received: true });
-      return;
-    }
+    const { id, event_type } = req.body;
 
     // TODO: Check if event has already been processed (idempotency)
 
     switch (event_type) {
-      case "subscription_created":
-        console.log(`New subscription: ${subscription.id}`);
-        console.log(`Customer: ${subscription.customer_id}`);
-        console.log(`Plan: ${subscription.plan_id}`);
-        // Provision access/entitlements
+      case WebhookEventType.SubscriptionCreated: {
+        const subscriptionCreatedEvent: WebhookEvent<WebhookEventType.SubscriptionCreated> =
+          req.body;
+        const subscription = subscriptionCreatedEvent.content.subscription;
+        console.log(`✅ New subscription created: ${subscription.id}`);
+        console.log(`   Customer ID: ${subscription.customer_id}`);
+        console.log(`   Plan ID: ${subscription.plan_id}`);
+        console.log(`   Status: ${subscription.status}`);
+        // TODO: Provision access/entitlements for the customer
         break;
+      }
 
-      case "subscription_renewed":
-        console.log(`Subscription renewed: ${subscription.id}`);
-        // Extend access period
+      case "subscription_renewed": {
+        const subscriptionRenewedEvent: WebhookEvent<WebhookEventType.SubscriptionRenewed> =
+          req.body;
+        const subscription = subscriptionRenewedEvent.content.subscription;
+        console.log(`🔄 Subscription renewed: ${subscription.id}`);
+        console.log(`   Customer ID: ${subscription.customer_id}`);
+        console.log(`   Next billing at: ${subscription.next_billing_at}`);
+        // TODO: Extend access period for the customer
         break;
+      }
 
-      case "subscription_changed":
-        console.log(`Subscription changed: ${subscription.id}`);
-        console.log(`New plan: ${subscription.plan_id}`);
-        // Update entitlements based on plan changes
+      case "subscription_changed": {
+        const subscriptionChangedEvent: WebhookEvent<WebhookEventType.SubscriptionChanged> =
+          req.body;
+        const subscription = subscriptionChangedEvent.content.subscription;
+        console.log(`🔄 Subscription changed: ${subscription.id}`);
+        console.log(`   Customer ID: ${subscription.customer_id}`);
+        console.log(`   Plan ID: ${subscription.plan_id}`);
+        console.log(`   Status: ${subscription.status}`);
+        // TODO: Update entitlements based on plan changes
         break;
+      }
+
+      default:
+        console.log(`ℹ️  Unhandled subscription event: ${event_type}`);
     }
 
     // TODO: Mark event as processed (idempotency)
@@ -344,7 +361,6 @@ export function handleSubscriptionWebhook(req: Request, res: Response): void {
     res.status(200).json({
       received: true,
       event_id: id,
-      subscription_id: subscription.id,
     });
   } catch (error) {
     res.status(500).json({ error: "Internal server error" });
@@ -361,25 +377,20 @@ The payment handler tracks successful payments in `src/handlers/payments.ts`. Th
 ```typescript
 export function handlePaymentsWebhook(req: Request, res: Response): void {
   try {
-    const { id, event_type, content } = req.body;
-    const transaction = content?.transaction;
-
-    if (!transaction) {
-      res.status(200).json({ received: true });
-      return;
-    }
+    const { id, event_type } = req.body;
 
     // TODO: Check if event has already been processed (idempotency)
 
-    if (event_type === "payment_succeeded") {
-      console.log(`Payment succeeded: ${transaction.id}`);
-      console.log(`Customer: ${transaction.customer_id}`);
+    if (event_type === WebhookEventType.PaymentSucceeded) {
+      const paymentSucceededEvent: WebhookEvent<WebhookEventType.PaymentSucceeded> =
+        req.body;
+      const transaction = paymentSucceededEvent.content.transaction;
+      console.log(`✅ Payment succeeded: ${transaction.id}`);
+      console.log(`   Customer ID: ${transaction.customer_id}`);
       console.log(
-        `Amount: ${transaction.amount / 100} ${transaction.currency_code}`,
+        `   Amount: ${transaction.amount! / 100} ${transaction.currency_code}`,
       );
-      // Update revenue metrics
-      // Clear "pending renewal" flags
-      // Send payment confirmation email
+      console.log(`   Subscription ID: ${transaction.subscription_id}`);
     }
 
     // TODO: Mark event as processed (idempotency)
@@ -387,7 +398,6 @@ export function handlePaymentsWebhook(req: Request, res: Response): void {
     res.status(200).json({
       received: true,
       event_id: id,
-      transaction_id: transaction.id,
     });
   } catch (error) {
     res.status(500).json({ error: "Internal server error" });
