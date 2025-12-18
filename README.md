@@ -10,10 +10,10 @@ The application uses the [Hookdeck Event Gateway](https://hookdeck.com) to solve
 
 **Key Features:**
 
-- **Filtered Event Routing** - Chargebee sends all events to a single Hookdeck endpoint, which routes them to focused handlers based on `event_type`
+- **Filtered Event Routing** - Chargebee sends all events to a single Event Gateway endpoint, which routes them to focused handlers based on `event_type`
 - **Business Use Cases** - Subscription provisioning, payment tracking, and customer synchronization
-- **Programmatic Setup** - Automated scripts create Hookdeck Connections and Chargebee webhook endpoints
-- **Dual Authentication** - Hookdeck signature verification and Chargebee Basic Auth
+- **Programmatic Setup** - Automated scripts create Event Gateway Connections and Chargebee webhook endpoints
+- **Dual Authentication** - Event Gateway signature verification and Chargebee Basic Auth
 - **Modular Architecture** - Separate handlers for customer, subscription, and payment workflows
 - **TypeScript** - Type safety and better developer experience
 
@@ -26,7 +26,7 @@ Chargebee → Hookdeck Event Gateway → Application Endpoints
                                     └─ /webhooks/chargebee/payments
 ```
 
-Chargebee sends all webhook events to a single Hookdeck Source URL. Hookdeck authenticates incoming requests using Basic Auth credentials configured in both systems. Three Hookdeck Connections route events to focused handlers based on the `event_type` field:
+Chargebee sends all webhook events to a single Event Gateway Source URL. The Event Gateway authenticates incoming requests using Basic Auth credentials configured in both systems. Three Event Gateway Connections route events to focused handlers based on the `event_type` field:
 
 - **Customer handler** syncs profile changes to your CRM or database
 - **Subscription handler** provisions access, updates entitlements, and processes renewals
@@ -84,7 +84,7 @@ PROD_DESTINATION_URL=https://your-production-domain.com
 
 ## Setup Webhook Connections
 
-**Important:** Before running the application, you must set up the webhook connections between Chargebee and Hookdeck.
+**Important:** Before running the application, you must set up the webhook connections between Chargebee and the Event Gateway.
 
 ### Development Mode Setup
 
@@ -96,7 +96,7 @@ For local development with Hookdeck CLI:
 npm run connections:upsert:dev
 ```
 
-This configures Hookdeck to forward webhooks to your local development server via the CLI.
+This configures the Event Gateway to forward webhooks to your local development server via the CLI.
 
 2. **Install and authenticate the Hookdeck CLI**:
 
@@ -119,7 +119,7 @@ For production deployment:
 npm run connections:upsert:prod
 ```
 
-This configures Hookdeck to forward webhooks to your production server URL (specified in `PROD_DESTINATION_URL`).
+This configures the Event Gateway to forward webhooks to your production server URL (specified in `PROD_DESTINATION_URL`).
 
 ## Development
 
@@ -131,7 +131,7 @@ npm run dev
 
 The server will start on `http://localhost:4000` (or the PORT specified in your `.env` file).
 
-You should now have both the Hookdeck CLI and your application running. The Hookdeck CLI will forward webhook events from Hookdeck to your local server.
+You should now have both the Hookdeck CLI and your application running. The Hookdeck CLI will forward webhook events from the Event Gateway to your local server.
 
 ## Building for Production
 
@@ -159,12 +159,12 @@ chargebee-demo/
 │   │   └── payments.ts              # Payment event handler
 │   ├── middleware/
 │   │   ├── chargebee-auth.ts        # Chargebee Basic Auth verification
-│   │   └── hookdeck-auth.ts         # Hookdeck signature verification
+│   │   └── hookdeck-auth.ts         # Event Gateway signature verification
 │   └── types/
 │       └── express.d.ts             # TypeScript type extensions
 ├── scripts/
 │   ├── upsert-connections.ts        # Automated connection setup script
-│   ├── clean.ts                     # Cleanup script for Hookdeck resources
+│   ├── clean.ts                     # Cleanup script for Event Gateway resources
 │   └── shared.ts                    # Shared types and utilities
 ├── dist/                            # Compiled JavaScript output
 ├── .env.example                     # Environment variables template
@@ -176,18 +176,18 @@ chargebee-demo/
 
 ## Webhook Connection Setup
 
-The project includes automated scripts that programmatically create Hookdeck Connections and configure Chargebee webhook endpoints. This approach ensures consistency across environments and eliminates manual configuration drift.
+The project includes automated scripts that programmatically create Event Gateway Connections and configure Chargebee webhook endpoints. This approach ensures consistency across environments and eliminates manual configuration drift.
 
 ### Understanding the Setup Process
 
 The setup script performs these operations:
 
-1. **Creates a Hookdeck Source** - Generates a webhook URL that Chargebee will send events to, with Basic Auth configured
-2. **Creates three Hookdeck Connections** - Each Connection routes specific event types to focused handlers:
+1. **Creates an Event Gateway Source** - Generates a webhook URL that Chargebee will send events to, with Basic Auth configured
+2. **Creates three Event Gateway Connections** - Each Connection routes specific event types to focused handlers:
    - **Customer Connection**: Routes events where `body.event_type` starts with `customer_` to `/webhooks/chargebee/customer`
    - **Subscription Connection**: Routes events where `body.event_type` starts with `subscription_` to `/webhooks/chargebee/subscription`
    - **Payment Connection**: Routes events where `body.event_type` equals `payment_succeeded` to `/webhooks/chargebee/payments`
-3. **Creates Chargebee webhook endpoint** - Configures Chargebee to send events to the Hookdeck Source URL with Basic Auth credentials
+3. **Creates Chargebee webhook endpoint** - Configures Chargebee to send events to the Event Gateway Source URL with Basic Auth credentials
 
 The scripts are idempotent—running them multiple times will update existing resources rather than creating duplicates.
 
@@ -241,13 +241,13 @@ hookdeck login
 hookdeck listen 4000 chargebee
 ```
 
-5. Copy the webhook URL provided by Hookdeck and manually configure it in your Chargebee dashboard under Settings > API Keys & Webhooks > Webhooks
+5. Copy the webhook URL provided by the Event Gateway and manually configure it in your Chargebee dashboard under Settings > API Keys & Webhooks > Webhooks
 
 ## Authentication
 
 The application uses dual authentication for maximum security:
 
-1. **Hookdeck Signature Verification** - Verifies that webhooks are coming from Hookdeck using HMAC-SHA256 signatures
+1. **Event Gateway Signature Verification** - Verifies that webhooks are coming from the Event Gateway using HMAC-SHA256 signatures
 2. **Chargebee Basic Auth** - Validates the Basic Auth credentials that Chargebee includes with webhooks
 
 Both authentication methods are applied globally to all `/webhooks/*` routes.
@@ -264,9 +264,9 @@ Both authentication methods are applied globally to all `/webhooks/*` routes.
 
 ### Setup & Utility Scripts
 
-- `npm run connections:upsert:dev` - Set up Hookdeck and Chargebee connections for development (CLI destinations)
-- `npm run connections:upsert:prod` - Set up Hookdeck and Chargebee connections for production (HTTP destinations)
-- `npm run connections:clean` - Remove all Hookdeck connections and sources (useful for reset)
+- `npm run connections:upsert:dev` - Set up Event Gateway and Chargebee connections for development (CLI destinations)
+- `npm run connections:upsert:prod` - Set up Event Gateway and Chargebee connections for production (HTTP destinations)
+- `npm run connections:clean` - Remove all Event Gateway connections and sources (useful for reset)
 
 ## Webhook Endpoints & Event Types
 
@@ -299,7 +299,7 @@ Handles payment events for revenue tracking and billing operations:
 
 **Business Use Case:** Track revenue, confirm renewals, update billing status, and send payment confirmation emails.
 
-Each handler extracts event data from the webhook payload, processes it based on the event type, and returns a 200 OK response to confirm successful delivery to Hookdeck. The handlers include TODO comments indicating where to implement idempotency checks and your specific business logic.
+Each handler extracts event data from the webhook payload, processes it based on the event type, and returns a 200 OK response to confirm successful delivery to the Event Gateway. The handlers include TODO comments indicating where to implement idempotency checks and your specific business logic.
 
 ## Health Check
 
@@ -315,12 +315,12 @@ For production deployment:
 
 1. **Set up production environment variables** - Copy `.env.example` to `.env` and configure with production values
 2. **Set `PROD_DESTINATION_URL`** - Your production server's base URL (e.g., `https://your-app.com`)
-3. **Run production setup** - Execute `npm run connections:upsert:prod` to create HTTP-based Hookdeck Connections
+3. **Run production setup** - Execute `npm run connections:upsert:prod` to create HTTP-based Event Gateway Connections
 4. **Build the application** - Run `npm run build` to compile TypeScript
 5. **Deploy** - Deploy the `dist/` directory and `.env` file to your hosting platform
 6. **Start the server** - Run `npm start` on your production server
 
-Hookdeck will forward webhook events from Chargebee to your production endpoints at the configured `PROD_DESTINATION_URL`.
+The Event Gateway will forward webhook events from Chargebee to your production endpoints at the configured `PROD_DESTINATION_URL`.
 
 ## Idempotency
 
