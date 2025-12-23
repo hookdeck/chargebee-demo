@@ -487,11 +487,7 @@ Check multiple points in the flow to confirm events are processed correctly:
 
 _Caption: Event delivery in the Hookdeck Event Gateway dashboard_
 
-The dashboard shows event details including the full payload, headers, and delivery attempts. Click into an event to see the JSON structure and verify that your handler received the correct data.
-
-![Hookdeck event details view displaying the JSON payload of a customer_created event and successful delivery attempt with 200 OK response](images/hookdeck-event-details.png)
-
-_Caption: Event details showing successful delivery and handler response_
+The dashboard shows event details, including the full payload, headers, and delivery attempts. Click into an event to see the JSON structure and verify that your handler received the correct data.
 
 ### What Success Looks Like
 
