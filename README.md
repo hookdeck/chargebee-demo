@@ -17,6 +17,12 @@ The application uses the [Hookdeck Event Gateway](https://hookdeck.com) to solve
 - **Modular Architecture** - Separate handlers for customer, subscription, and payment workflows
 - **TypeScript** - Type safety and better developer experience
 
+<p align="center">
+  <a href="https://www.chargebee.com/tutorials/reliable-subscription-customer-automation-with-chargebee-webhooks-and-the-hookdeck-event-gateway/?ref=github-hookdeck-chargebee-demo">
+    <img src="https://img.shields.io/badge/📖_Read_the_Full_Tutorial_on_chargebee.com-blue?style=for-the-badge" alt="Read the Full Tutorial on chargebee.com">
+  </a>
+</p>
+
 ## How It Works
 
 ```
