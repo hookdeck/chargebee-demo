@@ -8,6 +8,12 @@ This project demonstrates how to build reliable webhook handlers for [Chargebee]
 
 The application uses the [Hookdeck Event Gateway](https://hookdeck.com) to solve common webhook reliability challenges: automatic retries for network failures, duplicate detection to prevent double-processing, filtered event routing to separate concerns, and comprehensive observability for debugging.
 
+<p align="center">
+  <a href="https://www.chargebee.com/tutorials/reliable-subscription-customer-automation-with-chargebee-webhooks-and-the-hookdeck-event-gateway/?ref=github-hookdeck-chargebee-demo">
+    <img src="https://img.shields.io/badge/📖_Read_the_Full_Tutorial_on_chargebee.com-blue?style=for-the-badge" alt="Read the Full Tutorial on chargebee.com">
+  </a>
+</p>
+
 **Key Features:**
 
 - **Filtered Event Routing** - Chargebee sends all events to a single Event Gateway endpoint, which routes them to focused handlers based on `event_type`
@@ -16,12 +22,6 @@ The application uses the [Hookdeck Event Gateway](https://hookdeck.com) to solve
 - **Dual Authentication** - Event Gateway signature verification and Chargebee Basic Auth
 - **Modular Architecture** - Separate handlers for customer, subscription, and payment workflows
 - **TypeScript** - Type safety and better developer experience
-
-<p align="center">
-  <a href="https://www.chargebee.com/tutorials/reliable-subscription-customer-automation-with-chargebee-webhooks-and-the-hookdeck-event-gateway/?ref=github-hookdeck-chargebee-demo">
-    <img src="https://img.shields.io/badge/📖_Read_the_Full_Tutorial_on_chargebee.com-blue?style=for-the-badge" alt="Read the Full Tutorial on chargebee.com">
-  </a>
-</p>
 
 ## How It Works
 
