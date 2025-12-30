@@ -47,7 +47,7 @@ This architecture provides separation of concerns, easier testing, and independe
 1. Clone this repository:
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/hookdeck/chargebee-demo.git
 cd chargebee-demo
 ```
 
